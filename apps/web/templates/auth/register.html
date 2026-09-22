@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-wrap">
+    <div class="card auth-card">
+        <span class="eyebrow">Новый пользователь</span>
+        <h2>Регистрация</h2>
+        <p>Один email соответствует одному профилю кандидата. Вакансии и резюме будут привязаны к этому аккаунту.</p>
+
+        {% if error %}
+            <div class="page-notice page-notice-danger inline-notice">{{ error }}</div>
+        {% endif %}
+
+        <form action="/register" method="post" class="form-grid">
+            <label class="form-label">
+                <span>Email</span>
+                <input type="email" name="email" placeholder="you@example.com" value="{{ email_value or '' }}" required>
+            </label>
+
+            <label class="form-label">
+                <span>Пароль</span>
+                <input type="password" name="password" placeholder="Минимум 6 символов" required>
+            </label>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Зарегистрироваться</button>
+                <a href="/login" class="btn btn-secondary">Уже есть аккаунт</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

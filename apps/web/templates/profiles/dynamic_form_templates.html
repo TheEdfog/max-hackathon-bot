@@ -1,0 +1,102 @@
+<template id="experience-template">
+    <div class="repeatable-card">
+        <div class="repeatable-card-header">
+            <strong>Место работы</strong>
+            <button type="button" class="btn btn-danger" data-remove-card>Удалить</button>
+        </div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Компания</span><input type="text" name="experience_company" placeholder="Компания, учебная организация или волонтёрский проект"></label>
+            <label class="form-label"><span>Должность</span><input type="text" name="experience_position" placeholder="Backend-разработчик, стажёр, аналитик"></label>
+        </div>
+        <label class="form-label">
+            <span>Город работы</span>
+            <input type="text" name="experience_city" placeholder="Москва, удалённо, Санкт-Петербург">
+            <small class="form-help">Укажите город конкретного места работы или формат вроде «удалённо», если опыт был дистанционным.</small>
+        </label>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Дата начала</span><input type="month" name="experience_start"></label>
+            <label class="form-label"><span>Дата окончания</span><input type="month" name="experience_end"><small class="form-help">Оставьте пустым, если опыт продолжается сейчас.</small></label>
+        </div>
+        <label class="form-label"><span>Задачи</span><textarea name="experience_tasks" rows="4" placeholder="Что делали? Какие технологии использовали? Какие задачи решали?"></textarea></label>
+        <label class="form-label"><span>Достижения и результаты</span><textarea name="experience_achievements" rows="4" placeholder="Что улучшили, запустили, автоматизировали или довели до результата?"></textarea></label>
+    </div>
+</template>
+
+<template id="project-template">
+    <div class="repeatable-card">
+        <div class="repeatable-card-header"><strong>Проект</strong><button type="button" class="btn btn-danger" data-remove-card>Удалить</button></div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Название проекта</span><input type="text" name="project_name" placeholder="Task Manager API, РезюмИТ"></label>
+            <label class="form-label"><span>Стек</span><input type="text" name="project_stack" placeholder="Python, FastAPI, PostgreSQL, Docker"></label>
+        </div>
+        <label class="form-label"><span>Ваша роль</span><input type="text" name="project_role" placeholder="Разработал API, настроил БД, написал тесты"></label>
+        <label class="form-label"><span>Описание проекта</span><textarea name="project_description" rows="4" placeholder="Что это за проект и какую задачу он решает?"></textarea></label>
+        <label class="form-label"><span>Результат</span><textarea name="project_result" rows="3" placeholder="Что получилось в итоге? Что можно показать рекрутеру?"></textarea></label>
+    </div>
+</template>
+
+<template id="education-template">
+    <div class="repeatable-card">
+        <div class="repeatable-card-header"><strong>Образование</strong><button type="button" class="btn btn-danger" data-remove-card>Удалить</button></div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Учебное заведение</span><input type="text" name="education_org" placeholder="Университет, колледж"></label>
+            <label class="form-label"><span>Направление</span><input type="text" name="education_program" placeholder="Прикладная информатика"></label>
+        </div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Год начала</span><input type="text" name="education_start" placeholder="2022"></label>
+            <label class="form-label"><span>Год окончания</span><input type="text" name="education_end" placeholder="2026"></label>
+        </div>
+        <label class="form-label"><span>Детали</span><textarea name="education_details" rows="3" placeholder="Тема диплома, релевантные дисциплины, важные учебные проекты."></textarea></label>
+    </div>
+</template>
+
+<template id="course-template">
+    <div class="repeatable-card">
+        <div class="repeatable-card-header"><strong>Курс или сертификат</strong><button type="button" class="btn btn-danger" data-remove-card>Удалить</button></div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Название</span><input type="text" name="course_name" placeholder="Python-разработчик, SQL для анализа данных"></label>
+            <label class="form-label"><span>Организация</span><input type="text" name="course_provider" placeholder="Stepik, Coursera, Яндекс Практикум"></label>
+        </div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Год</span><input type="text" name="course_year" placeholder="2025"></label>
+            <label class="form-label"><span>Детали</span><input type="text" name="course_details" placeholder="Что изучили или какой сертификат получили"></label>
+        </div>
+    </div>
+</template>
+
+<template id="activity-template">
+    <div class="repeatable-card">
+        <div class="repeatable-card-header"><strong>Активность</strong><button type="button" class="btn btn-danger" data-remove-card>Удалить</button></div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Тип</span><input type="text" name="activity_type" placeholder="хакатон, олимпиада, волонтёрский проект"></label>
+            <label class="form-label"><span>Название</span><input type="text" name="activity_name" placeholder="Название события или проекта"></label>
+        </div>
+        <div class="form-two-columns">
+            <label class="form-label"><span>Год</span><input type="text" name="activity_year" placeholder="2025"></label>
+            <label class="form-label"><span>Результат</span><input type="text" name="activity_result" placeholder="место, роль, итог, ссылка на проект"></label>
+        </div>
+    </div>
+</template>
+
+<script>
+    document.addEventListener("click", (event) => {
+        const addButton = event.target.closest("[data-add-template]");
+        if (addButton) {
+            const template = document.getElementById(addButton.dataset.addTemplate);
+            const target = document.getElementById(addButton.dataset.addTarget);
+            if (template && target) {
+                target.appendChild(template.content.cloneNode(true));
+            }
+            return;
+        }
+
+        const removeButton = event.target.closest("[data-remove-card]");
+        if (removeButton) {
+            const list = removeButton.closest(".repeatable-list");
+            const card = removeButton.closest(".repeatable-card");
+            if (list && card && list.querySelectorAll(".repeatable-card").length > 1) {
+                card.remove();
+            }
+        }
+    });
+</script>

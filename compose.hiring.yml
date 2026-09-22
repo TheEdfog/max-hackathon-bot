@@ -1,0 +1,12 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.hiring
+    env_file: .env.hiring
+    volumes:
+      - hiring-data:/app/data
+    restart: unless-stopped
+    # Local test mode: no public inbound ports, no web UI required.
+volumes:
+  hiring-data:

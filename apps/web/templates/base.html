@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title if title else app_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}?v=20260424-form-guards">
+</head>
+<body data-user-id="{{ current_user.id if current_user else '' }}">
+    <div class="layout">
+        <header class="site-header">
+            <div class="container header-inner">
+                <a class="brand-block" href="/dashboard">
+                    <span class="brand-mark">Р</span>
+                    <span class="brand-copy">
+                        <span class="logo">{{ app_name }}</span>
+                        <span class="subtitle">Резюме, которое говорит на языке вакансии</span>
+                    </span>
+                </a>
+
+                <nav class="nav">
+                    {% if current_user %}
+                        {% set path = request.url.path %}
+                        <a href="/dashboard" class="nav-link {% if path.startswith('/dashboard') %}is-active{% endif %}">Главная</a>
+                        <a href="/profiles" class="nav-link {% if path.startswith('/profiles') %}is-active{% endif %}">Профиль</a>
+                        <a href="/vacancies" class="nav-link {% if path.startswith('/vacancies') %}is-active{% endif %}">Вакансии</a>
+                        <a href="/result" class="nav-link {% if path.startswith('/result') %}is-active{% endif %}">Анализ</a>
+                        <form action="/logout" method="post" class="inline-form">
+                            <button type="submit" class="nav-logout-button">Выйти</button>
+                        </form>
+                    {% else %}
+                        {% set path = request.url.path %}
+                        <a href="/login" class="nav-link {% if path.startswith('/login') %}is-active{% endif %}">Вход</a>
+                        <a href="/register" class="nav-link {% if path.startswith('/register') %}is-active{% endif %}">Регистрация</a>
+                    {% endif %}
+                </nav>
+            </div>
+        </header>
+
+        <main class="container page-content">
+            {% if flash_message %}
+                <div class="page-notice page-notice-{{ flash_type }}">
+                    {{ flash_message }}
+                </div>
+            {% endif %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/main.js') }}?v=20260424-form-guards"></script>
+</body>
+</html>

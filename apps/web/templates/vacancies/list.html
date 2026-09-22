@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Вакансии</span>
+        <h2>Сохранённые вакансии</h2>
+        <p>
+            Храните здесь вакансии, под которые хотите адаптировать отклик. РезюмИТ извлечёт требования,
+            разделит их на обязательные и желательные и подготовит почву для match-анализа.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a href="/vacancies/create" class="btn btn-primary">Добавить вакансию</a>
+    </div>
+</section>
+
+{% if vacancies %}
+    <section class="entity-grid">
+        {% for vacancy in vacancies %}
+            <article class="card entity-card vacancy-card">
+                <div class="entity-card-header">
+                    <div>
+                        <h3>{{ vacancy.title or "Без названия" }}</h3>
+                        <p>Обновлено: {{ vacancy.updated_at.strftime("%d.%m.%Y %H:%M") if vacancy.updated_at else "-" }}</p>
+                    </div>
+                    <span class="badge badge-neutral">#{{ loop.index }}</span>
+                </div>
+
+                <div class="entity-meta-list">
+                    {% if vacancy.source_url %}
+                        <div><strong>URL:</strong> <a class="link-break" href="{{ vacancy.source_url }}" target="_blank">{{ vacancy.source_url }}</a></div>
+                    {% endif %}
+                </div>
+
+                <div class="entity-block vacancy-requirements-block">
+                    <span class="entity-block-title">Извлечённые требования</span>
+                    {% if vacancy.requirements %}
+                        <div class="skill-tags">
+                            {% for requirement in vacancy.requirements %}
+                                <span class="skill-chip">{{ requirement.display_name or requirement.skill_norm }} · {{ requirement.type.value }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="muted-text">Требования пока не извлечены.</p>
+                    {% endif %}
+                </div>
+
+                <div class="entity-block vacancy-text-block">
+                    <span class="entity-block-title">Текст вакансии</span>
+                    {% if vacancy.raw_text.startswith("Текст вакансии не удалось получить автоматически.") %}
+                        <div class="page-notice page-notice-warning inline-notice">
+                            Автоматически прочитать вакансию по ссылке не получилось. Откройте редактирование и вставьте текст вакансии вручную.
+                        </div>
+                    {% endif %}
+                    <div class="text-preview">{{ vacancy.raw_text[:500] }}{% if vacancy.raw_text|length > 500 %}...{% endif %}</div>
+                </div>
+
+                <div class="inline-actions">
+                    <a href="/vacancies/{{ vacancy.id }}" class="btn btn-secondary">Редактировать</a>
+                    <form
+                        action="/vacancies/{{ vacancy.id }}/extract"
+                        method="post"
+                        class="inline-form"
+                        data-loading-form
+                        data-clear-analysis-cache
+                        {% if vacancy.requirements %}
+                            data-loading-messages="Открываем страницу анализа|Подставляем выбранную вакансию|Вспоминаем подготовленные требования|Готовим экран для расчёта match"
+                        {% else %}
+                            data-loading-messages="Читаем текст вакансии|Выделяем must-have требования|Отделяем плюсы от обязательного|Нормализуем названия навыков|Проверяем контекст требований|Убираем повторы|Готовим вакансию к match-анализу|Почти открываем анализ"
+                        {% endif %}
+                    >
+                        <button type="submit" class="btn btn-primary">
+                            {% if vacancy.requirements %}
+                                Перейти к анализу
+                            {% else %}
+                                Извлечь требования и перейти к анализу
+                            {% endif %}
+                        </button>
+                    </form>
+                    <form
+                        action="/vacancies/{{ vacancy.id }}/delete"
+                        method="post"
+                        class="inline-form"
+                        data-clear-analysis-cache
+                        onsubmit="return confirm('Удалить вакансию вместе с анализом и документами, которые были созданы под неё?');"
+                    >
+                        <button type="submit" class="btn btn-danger">Удалить</button>
+                    </form>
+                </div>
+            </article>
+        {% endfor %}
+    </section>
+{% else %}
+    <section class="card empty-state-card">
+        <h3>Вакансий пока нет</h3>
+        <p>Добавьте первую вакансию, чтобы анализировать совместимость и формировать резюме под неё.</p>
+        <a href="/vacancies/create" class="btn btn-primary">Добавить вакансию</a>
+    </section>
+{% endif %}
+{% endblock %}

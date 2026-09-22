@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero-card">
+    <div>
+        <span class="eyebrow">С чего начать</span>
+        <h2>Соберите отклик, который говорит на языке вакансии</h2>
+        <p>
+            Начните с профиля: добавьте опыт, навыки и проекты. Затем выберите вакансию,
+            а РезюмИТ покажет совпадения, пробелы и поможет подготовить документы для отклика.
+        </p>
+    </div>
+    <div class="hero-actions">
+        <a href="/profiles/create" class="btn btn-primary hero-start-button">Начать</a>
+    </div>
+</section>
+
+<section class="dashboard-grid">
+    <article class="card mini-card">
+        <h3>Профиль кандидата</h3>
+        {% if profile %}
+            <p><strong>{{ profile.full_name }}</strong>, {{ profile.target_position }}</p>
+            <p>{{ profile.email }}{% if profile.city %} · {{ profile.city }}{% endif %}</p>
+            {% if profile.skills %}
+                <div class="skill-tags">
+                    {% for skill in profile.skills[:12] %}
+                        <span class="skill-chip">{{ skill.skill_norm }}</span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <a href="/profiles/{{ profile.id }}" class="btn btn-secondary">Открыть профиль</a>
+        {% else %}
+            <div class="page-notice page-notice-warning inline-notice">
+                Профиль ещё не заполнен. Без него нельзя посчитать match и честно собрать резюме.
+            </div>
+            <a href="/profiles/create" class="btn btn-primary">Создать профиль</a>
+        {% endif %}
+    </article>
+
+    <article class="card mini-card">
+        <h3>Вакансии</h3>
+        {% if vacancies %}
+            <p>Сохранено вакансий: <strong>{{ vacancies|length }}</strong></p>
+            <div class="stack-sm dashboard-vacancy-list">
+                {% for vacancy in vacancies %}
+                    {% set is_last_analyzed = last_analysis and last_analysis.vacancy and last_analysis.vacancy.id == vacancy.id and last_analysis.match_result %}
+                    {% set has_ready_documents = is_last_analyzed and last_analysis.resume and last_analysis.cover_letter %}
+                    <div class="compact-row dashboard-vacancy-row{% if is_last_analyzed %} is-analyzed{% endif %}{% if has_ready_documents %} has-documents{% endif %}">
+                        <div class="dashboard-vacancy-main">
+                            <span class="dashboard-vacancy-title">{{ vacancy.title or "Без названия" }}</span>
+                            {% if is_last_analyzed or has_ready_documents %}
+                                <span class="dashboard-vacancy-badges">
+                                    {% if is_last_analyzed %}
+                                        <span class="badge badge-neutral dashboard-status-badge">Последний анализ</span>
+                                    {% endif %}
+                                    {% if has_ready_documents %}
+                                        <span class="badge badge-success dashboard-status-badge">Документы готовы</span>
+                                    {% endif %}
+                                </span>
+                            {% endif %}
+                        </div>
+                        <a href="/result?vacancy_id={{ vacancy.id }}&run=1">Анализ</a>
+                    </div>
+                {% endfor %}
+            </div>
+            <a href="/vacancies" class="btn btn-secondary">Все вакансии</a>
+        {% else %}
+            <div class="page-notice page-notice-warning inline-notice">
+                Добавьте вакансию текстом или ссылкой на hh.ru. РезюмИТ попробует прочитать её автоматически.
+            </div>
+            <a href="/vacancies/create" class="btn btn-primary">Добавить вакансию</a>
+        {% endif %}
+    </article>
+
+    <article class="card mini-card">
+        <h3>Оценка подходящей вакансии</h3>
+        {% if last_analysis and last_analysis.match_result %}
+            <p>
+                Последний анализ: <strong>{{ last_analysis.vacancy.title or "Без названия" }}</strong>.
+                Ниже краткая сводка, чтобы главная страница сразу показывала состояние.
+            </p>
+            <div class="score-grid dashboard-score-grid">
+                <article class="score-card score-main dashboard-score-card">
+                    <span>Итоговый match</span>
+                    <strong>{{ "%.1f"|format(last_analysis.match_result.total_pct) }}%</strong>
+                    <small>Общая оценка совпадения</small>
+                </article>
+                <article class="score-card dashboard-score-card">
+                    <span>Must</span>
+                    <strong>{{ "%.1f"|format(last_analysis.match_result.must_pct) }}%</strong>
+                    <small>{{ last_analysis.match_result.must_count }} требований</small>
+                </article>
+                <article class="score-card dashboard-score-card">
+                    <span>Nice</span>
+                    <strong>{{ "%.1f"|format(last_analysis.match_result.nice_pct) }}%</strong>
+                    <small>{{ last_analysis.match_result.nice_count }} требований</small>
+                </article>
+                <article class="score-card dashboard-score-card">
+                    <span>Пробелы</span>
+                    <strong>{{ last_analysis.match_result.missing_count }}</strong>
+                    <small>что подтянуть</small>
+                </article>
+            </div>
+            {% if last_analysis.low_match_warning %}
+                <div class="page-notice page-notice-warning inline-notice">
+                    {{ last_analysis.low_match_warning }}
+                </div>
+            {% endif %}
+            <a href="/result?vacancy_id={{ last_analysis.vacancy.id }}&run=1" class="btn btn-secondary">Открыть полный анализ</a>
+        {% elif last_analysis %}
+            <p>
+                Последняя выбранная вакансия: <strong>{{ last_analysis.vacancy.title or "Без названия" }}</strong>.
+                Требования ещё не извлечены, поэтому проценты пока не рассчитаны.
+            </p>
+            <a href="/result?vacancy_id={{ last_analysis.vacancy.id }}&run=1" class="btn btn-secondary">Посчитать анализ</a>
+        {% else %}
+            <p>
+                После анализа вакансии здесь появятся проценты match, must/nice и количество пробелов.
+            </p>
+            <a href="/result" class="btn btn-secondary">Открыть анализ</a>
+        {% endif %}
+    </article>
+
+    <article class="card mini-card">
+        <h3>Готовое резюме и сопроводительное письмо</h3>
+        {% if last_analysis and last_analysis.resume and last_analysis.cover_letter %}
+            <p>
+                Для последней проанализированной вакансии уже есть оба документа. Можно скачать их или открыть полный анализ.
+            </p>
+            {% if last_analysis.low_match_warning %}
+                <div class="page-notice page-notice-warning inline-notice">
+                    Документы готовы, но используйте их как черновик: {{ last_analysis.low_match_warning }}
+                </div>
+            {% endif %}
+            <div class="document-download-columns">
+                <div class="document-download-column">
+                    <span class="document-download-title">Резюме</span>
+                    <a href="/result/resume/{{ last_analysis.resume.id }}/export-pdf" class="btn btn-primary">Скачать PDF</a>
+                    <a href="/result/resume/{{ last_analysis.resume.id }}/export-latex" class="btn btn-secondary">Скачать LaTeX</a>
+                </div>
+                <div class="document-download-column">
+                    <span class="document-download-title">Сопроводительное письмо</span>
+                    <a href="/result/cover-letter/{{ last_analysis.cover_letter.id }}/export-pdf" class="btn btn-primary">Скачать PDF</a>
+                    <a href="/result/cover-letter/{{ last_analysis.cover_letter.id }}/export-latex" class="btn btn-secondary">Скачать LaTeX</a>
+                </div>
+            </div>
+            <a href="/result?vacancy_id={{ last_analysis.vacancy.id }}&resume_id={{ last_analysis.resume.id }}&run=1#documents" class="btn btn-secondary">Открыть документы</a>
+        {% else %}
+            <p>
+                Когда результат устроит, можно скачать резюме и сопроводительное в LaTeX или PDF и использовать его для отклика.
+            </p>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

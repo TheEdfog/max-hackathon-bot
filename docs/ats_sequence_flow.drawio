@@ -1,0 +1,182 @@
+<mxfile host="app.diagrams.net" modified="2026-04-11T17:05:00.000Z" agent="Codex" version="24.7.17" compressed="false">
+  <diagram id="ats-seq-ru-v3" name="Последовательность ATS (RU)">
+    <mxGraphModel dx="1720" dy="980" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="2338" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="2" value="Пользователь" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="40" width="170" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="Сервер (FastAPI)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="390" y="40" width="190" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="БД (PostgreSQL)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="740" y="40" width="190" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="GPT (DeepSeek)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="40" width="190" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="6" style="shape=line;strokeWidth=2;dashed=1;dashPattern=8 6;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="165" y="90" width="1" height="1640" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" style="shape=line;strokeWidth=2;dashed=1;dashPattern=8 6;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="485" y="90" width="1" height="1640" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" style="shape=line;strokeWidth=2;dashed=1;dashPattern=8 6;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="835" y="90" width="1" height="1640" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" style="shape=line;strokeWidth=2;dashed=1;dashPattern=8 6;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="1175" y="90" width="1" height="1640" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="20" value="Ограничение: 1 email = 1 профиль (один user = один profile)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="96" width="500" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="21" value="Анализ/генерация всегда по паре (profile_id, vacancy_id)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="560" y="96" width="430" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="Сырая вакансия хранится в файле storage/vacancy_raw/&lt;hash&gt;.txt; в БД хранится только relative_path" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="126" width="1230" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="30" value="1) Регистрация и вход" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="170" width="1230" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="31" value="2) Профиль пользователя (только форма, не JSON-файл)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="410" width="1230" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="32" value="3) Вакансия, хранение сырого файла, извлечение требований" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="650" width="1230" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="33" value="4) Аналитика: match, скоринг, рекомендации" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1030" width="1230" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="34" value="5) Генерация резюме, правки естественным языком, экспорт PDF/LaTeX" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1310" width="1230" height="28" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="100" value="POST /register (email, пароль)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="220" as="sourcePoint"/><mxPoint x="485" y="220" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="101" value="Проверка уникальности email" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="250" as="sourcePoint"/><mxPoint x="835" y="250" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="102" value="INSERT user + INSERT profile (1:1)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="280" as="sourcePoint"/><mxPoint x="835" y="280" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="103" value="JWT-cookie + редирект /dashboard" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="310" as="sourcePoint"/><mxPoint x="165" y="310" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="104" value="POST /login" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="340" as="sourcePoint"/><mxPoint x="485" y="340" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="105" value="Проверка пароля + выдача JWT" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="370" as="sourcePoint"/><mxPoint x="835" y="370" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <mxCell id="110" value="GET/POST /profile (заполнение полей формы)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="460" as="sourcePoint"/><mxPoint x="485" y="460" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="111" value="UPDATE profile по user_id" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="490" as="sourcePoint"/><mxPoint x="835" y="490" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="112" value="Профиль сохранен" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="520" as="sourcePoint"/><mxPoint x="165" y="520" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <mxCell id="120" value="POST /vacancies/create|update (URL ИЛИ raw_text)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="710" as="sourcePoint"/><mxPoint x="485" y="710" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="121" value="Если URL: парсинг в raw_text" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="740" as="sourcePoint"/><mxPoint x="710" y="740" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="122" value="filename = sha256(user_id + vacancy_id + timestamp + raw_text)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="770" as="sourcePoint"/><mxPoint x="760" y="770" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="123" value="Сохранить файл: storage/vacancy_raw/&lt;hash&gt;.txt" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="800" as="sourcePoint"/><mxPoint x="780" y="800" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="124" value="INSERT/UPDATE vacancy(source_url, raw_data_path=relative_path)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="830" as="sourcePoint"/><mxPoint x="835" y="830" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="125" value="Выбор vacancy_id для анализа/генерации" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="860" as="sourcePoint"/><mxPoint x="165" y="860" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="126" value="POST /vacancies/{id}/extract-requirements" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="890" as="sourcePoint"/><mxPoint x="485" y="890" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="127" value="SELECT raw_data_path; чтение raw файла по relative_path" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="920" as="sourcePoint"/><mxPoint x="835" y="920" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="128" value="Промпт: вернуть строгий JSON требований must/nice" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="950" as="sourcePoint"/><mxPoint x="1175" y="950" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="129" value="JSON требований; валидация схемы; запись в vacancy_requirements" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1175" y="980" as="sourcePoint"/><mxPoint x="485" y="980" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <mxCell id="140" value="POST /result/analyze?vacancy_id=..." style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="1080" as="sourcePoint"/><mxPoint x="485" y="1080" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="141" value="SELECT profile_id по user_id + требования по vacancy_id" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1110" as="sourcePoint"/><mxPoint x="835" y="1110" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="142" value="Расчет must_pct, nice_pct, total_pct, evidence_*" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1140" as="sourcePoint"/><mxPoint x="765" y="1140" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="143" value="Рекомендации: 1) что менять в резюме 2) что подучить/добрать опыт" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1170" as="sourcePoint"/><mxPoint x="835" y="1170" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="144" value="Сохранить analysis_snapshot + recommendations" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1200" as="sourcePoint"/><mxPoint x="835" y="1200" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="145" value="Показать match/скоринг/пробелы/рекомендации" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1230" as="sourcePoint"/><mxPoint x="165" y="1230" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+        <mxCell id="150" value="POST /result/generate-resume?vacancy_id=..." style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="1360" as="sourcePoint"/><mxPoint x="485" y="1360" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="151" value="Контекст пары (profile_id, vacancy_id, requirements, analysis)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1390" as="sourcePoint"/><mxPoint x="835" y="1390" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="152" value="Промпт: анти-галлюцинации + schema resume_json" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1420" as="sourcePoint"/><mxPoint x="1175" y="1420" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="153" value="resume_json" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1175" y="1450" as="sourcePoint"/><mxPoint x="485" y="1450" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="154" value="Валидация схемы и фактов; сохранение версии" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1480" as="sourcePoint"/><mxPoint x="835" y="1480" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="155" value="Показать превью результата" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1510" as="sourcePoint"/><mxPoint x="165" y="1510" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="156" value="Правки естественным языком (комментарий пользователя)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="1540" as="sourcePoint"/><mxPoint x="485" y="1540" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="157" value="Промпт дельта-правок; перегенерация фрагмента/версии" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1570" as="sourcePoint"/><mxPoint x="1175" y="1570" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="158" value="Обновленный JSON; новая версия" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="1175" y="1600" as="sourcePoint"/><mxPoint x="485" y="1600" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="159" value="Выбор формата выгрузки: PDF или LaTeX (.tex)" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="165" y="1630" as="sourcePoint"/><mxPoint x="485" y="1630" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="160" value="Если PDF: JSON -&gt; LaTeX -&gt; PDF; сохранить pdf_path" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1660" as="sourcePoint"/><mxPoint x="835" y="1660" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="161" value="Если LaTeX: отдать .tex; сохранить latex_source" style="endArrow=classic;html=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1690" as="sourcePoint"/><mxPoint x="835" y="1690" as="targetPoint"/></mxGeometry>
+        </mxCell>
+        <mxCell id="162" value="Скачать выбранный файл" style="endArrow=classic;html=1;dashed=1;strokeColor=#1a1a1a;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="485" y="1720" as="sourcePoint"/><mxPoint x="165" y="1720" as="targetPoint"/></mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

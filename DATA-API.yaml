@@ -1,0 +1,366 @@
+# DATA-API 1.0, based on stasnorman/example-data-api (see docs/DATA-API.md).
+# DRAFT: replace api.baseUrl after HTTPS deployment. This URL is NOT live.
+# No credentials here. The evaluator supplies a Bearer JWT for each named role.
+# Use dedicated synthetic employer/candidate/other_employer accounts without MAX links.
+schemaVersion: "1.0"
+solution:
+  name: "РезюмИТ Найм — помощник первичного отбора в MAX"
+  # teamId is optional; add only the confirmed organizer-issued team identifier.
+api:
+  baseUrl: "https://deployment-required.invalid"
+  openapi: "./openapi.json"
+  defaultHeaders:
+    Accept: "application/json"
+checks:
+  - id: health
+    name: Доступность API и базы данных
+    method: GET
+    path: /health
+    role: public
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [status, version]
+      bodySchema:
+        type: object
+        required: [status]
+        properties:
+          status: {const: ok}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: employer-identity
+    name: Авторизация тестового работодателя
+    description: JWT аккаунта employer передаётся проверяющей системе отдельно, не в YAML.
+    method: GET
+    path: /api/me
+    role: employer
+    dependsOn: [health]
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, role, company]
+      bodySchema:
+        type: object
+        required: [role, max_connected]
+        properties:
+          role: {const: employer}
+          max_connected: {const: false}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: candidate-identity
+    name: Авторизация тестового кандидата
+    method: GET
+    path: /api/me
+    role: candidate
+    dependsOn: [health]
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, role]
+      bodySchema:
+        type: object
+        required: [role, max_connected]
+        properties:
+          role: {const: candidate}
+          max_connected: {const: false}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: reject-anonymous
+    name: Закрытый кабинет недоступен без авторизации
+    method: GET
+    path: /api/jobs
+    role: public
+    expected:
+      statusCodes: [401]
+      contentType: application/json
+      requiredFields: [detail]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: extract-requirements
+    name: Извлечение профессиональных требований для подтверждения работодателем
+    method: POST
+    path: /api/requirements/extract
+    role: employer
+    dependsOn: [employer-identity]
+    request:
+      headers: {Content-Type: application/json}
+      body:
+        text: "Обязательно Python и PostgreSQL. Разрабатываем внутренний сервис учёта книг."
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [requirements, engine, notice]
+      bodySchema:
+        type: object
+        required: [requirements, engine]
+        properties:
+          engine: {const: rules}
+          requirements:
+            type: array
+            minItems: 2
+            contains:
+              type: object
+              required: [skill]
+              properties:
+                skill: {const: python}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: create-job
+    name: Создание тестовой вакансии с подтверждёнными требованиями
+    description: Создаёт новый объект при каждом вызове; повторять весь сценарий, не отдельный POST.
+    method: POST
+    path: /api/jobs
+    role: employer
+    dependsOn: [employer-identity, extract-requirements]
+    request:
+      headers: {Content-Type: application/json}
+      body:
+        title: "DATA-API: тестовый Python-разработчик"
+        description: "Синтетическая вакансия технической проверки. Обязательно Python и PostgreSQL. Не является предложением работы."
+        terms: "Только автоматизированная проверка, вымышленные данные"
+        requirements:
+          - {id: python, skill: python, label: Python, type: must, source: "Тестовое подтверждённое требование"}
+          - {id: pg, skill: postgresql, label: PostgreSQL, type: must, source: "Тестовое подтверждённое требование"}
+    expected:
+      statusCodes: [201]
+      contentType: application/json
+      requiredFields: [id, title, requirements, active, apply_url]
+      bodySchema:
+        type: object
+        required: [active]
+        properties:
+          active: {const: true}
+    extract:
+      jobId: $.id
+    timeoutMs: 5000
+    repeatable: false
+
+  - id: public-job
+    name: Кандидат может прочитать вакансию по ссылке
+    method: GET
+    path: /api/public/jobs/{job_id}
+    role: public
+    dependsOn: [create-job]
+    request:
+      path: {job_id: "${jobId}"}
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, title, company, requirements]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: reject-other-employer
+    name: Другой работодатель не видит отклики чужой вакансии
+    description: other_employer должен отличаться от employer; оба аккаунта имеют роль employer.
+    method: GET
+    path: /api/jobs/{job_id}/applications
+    role: other_employer
+    dependsOn: [create-job]
+    request:
+      path: {job_id: "${jobId}"}
+    expected:
+      statusCodes: [404]
+      contentType: application/json
+      requiredFields: [detail]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: require-consent
+    name: Отклик без согласия не принимается
+    method: POST
+    path: /api/jobs/{job_id}/apply
+    role: candidate
+    dependsOn: [create-job, candidate-identity]
+    request:
+      path: {job_id: "${jobId}"}
+      headers: {Content-Type: application/json}
+      body:
+        name: "Вымышленный кандидат DATA-API"
+        resume: "Я создал на Python учебный сервис учёта книг, написал тесты и документацию к API."
+        consent: false
+    expected:
+      statusCodes: [422]
+      contentType: application/json
+      requiredFields: [detail]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: apply
+    name: Приём согласованного отклика и уточнение недостающего навыка
+    method: POST
+    path: /api/jobs/{job_id}/apply
+    role: candidate
+    dependsOn: [create-job, candidate-identity, require-consent]
+    request:
+      path: {job_id: "${jobId}"}
+      headers: {Content-Type: application/json}
+      body:
+        name: "Вымышленный кандидат DATA-API"
+        resume: "Я создал на Python учебный сервис учёта книг, написал тесты и документацию к API."
+        consent: true
+    expected:
+      statusCodes: [201]
+      contentType: application/json
+      requiredFields: [id, status, questions, assessment, consent_at]
+      bodySchema:
+        type: object
+        required: [status, questions]
+        properties:
+          status: {const: clarifying}
+          questions:
+            type: array
+            minItems: 1
+            maxItems: 3
+            contains:
+              type: object
+              required: [id]
+              properties:
+                id: {const: pg}
+    extract:
+      applicationId: $.id
+    timeoutMs: 5000
+    repeatable: false
+
+  - id: answer
+    name: Уточнение опыта кандидатом
+    method: POST
+    path: /api/applications/{app_id}/answers
+    role: candidate
+    dependsOn: [apply]
+    request:
+      path: {app_id: "${applicationId}"}
+      headers: {Content-Type: application/json}
+      body:
+        answers:
+          pg: "Использовал PostgreSQL в учебном проекте: создал схему книг, писал SELECT и миграции."
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, status, answers, assessment]
+      bodySchema:
+        type: object
+        required: [status, assessment]
+        properties:
+          status: {const: ready}
+          assessment:
+            type: object
+            required: [covered, total]
+            properties:
+              covered: {const: 2}
+              total: {const: 2}
+    timeoutMs: 5000
+    repeatable: false
+
+  - id: employer-review
+    name: Работодатель получает отклик с основаниями и ответами
+    method: GET
+    path: /api/jobs/{job_id}/applications
+    role: employer
+    dependsOn: [answer]
+    request:
+      path: {job_id: "${jobId}"}
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      bodySchema:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          required: [id, resume, answers, assessment, status]
+          properties:
+            status: {const: ready}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: invite
+    name: Работодатель вручную приглашает кандидата
+    description: У тестовых аккаунтов нет MAX ID, реальные уведомления не отправляются.
+    method: POST
+    path: /api/applications/{app_id}/invite
+    role: employer
+    dependsOn: [employer-review]
+    request:
+      path: {app_id: "${applicationId}"}
+      headers: {Content-Type: application/json}
+      body:
+        message: "Тестовое приглашение DATA-API: подтвердите интерес. Реальная встреча не назначается."
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, status, invitation]
+      bodySchema:
+        type: object
+        required: [status]
+        properties:
+          status: {const: invited}
+    timeoutMs: 5000
+    repeatable: false
+
+  - id: confirm
+    name: Кандидат подтверждает интерес к интервью
+    method: POST
+    path: /api/applications/{app_id}/confirm
+    role: candidate
+    dependsOn: [invite]
+    request:
+      path: {app_id: "${applicationId}"}
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, status, timeline]
+      bodySchema:
+        type: object
+        required: [status]
+        properties:
+          status: {const: confirmed}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: metrics
+    name: Подтверждение отражено в метриках работодателя
+    method: GET
+    path: /api/metrics
+    role: employer
+    dependsOn: [confirm]
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [applications, invited, confirmed]
+      bodySchema:
+        type: object
+        required: [confirmed]
+        properties:
+          confirmed: {type: integer, minimum: 1}
+    timeoutMs: 5000
+    repeatable: true
+
+# Run cleanup even if a later check fails, provided the relevant ID was extracted.
+# Current API erases resume/answers and closes the vacancy; technical records remain.
+cleanup:
+  - id: withdraw-test-application
+    method: DELETE
+    path: /api/applications/{app_id}
+    role: candidate
+    request:
+      path: {app_id: "${applicationId}"}
+    expected:
+      statusCodes: [204, 404]
+    timeoutMs: 5000
+  - id: close-test-job
+    method: PATCH
+    path: /api/jobs/{job_id}
+    role: employer
+    request:
+      path: {job_id: "${jobId}"}
+      headers: {Content-Type: application/json}
+      body: {active: false}
+    expected:
+      statusCodes: [200, 404]
+    timeoutMs: 5000

@@ -1,0 +1,17 @@
+name: Hiring bot tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-hiring.lock
+      - run: pip install -r requirements-hiring.lock
+      - run: pip install -r requirements-data-api.lock
+      - run: python tools/data_api/validate_data_api.py DATA-API.yaml
+      - run: python -m pytest hiring_tests -q
+      - run: docker build -f Dockerfile.hiring -t rezumit-hiring:test .

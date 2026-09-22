@@ -1,0 +1,29 @@
+[app]
+name = "CVService"
+env = "development"
+host = "127.0.0.1"
+port = 8000
+debug = true
+
+[security]
+secret_key = "change_me_to_a_long_random_secret"
+session_cookie_name = "cvservice_session"
+jwt_algorithm = "HS256"
+access_token_expire_minutes = 1440
+
+[database]
+url = "postgresql+psycopg://postgres:postgres@localhost:5432/cvservice_db"
+
+[llm]
+base_url = "https://api.deepseek.com"
+api_key = ""
+model = "deepseek-reasoner"
+timeout_seconds = 180.0
+max_tokens = 8192
+
+[storage]
+root = "storage"
+max_upload_size_mb = 25
+
+[pdf]
+latex_engine = "xelatex"

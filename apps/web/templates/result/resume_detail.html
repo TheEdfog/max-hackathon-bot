@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block content %}
+{% set data = resume.resume_json %}
+{% set contact = data.get("contact", {}) %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Готовый документ</span>
+        <h2>Резюме #{{ resume.id }}</h2>
+        <p>
+            Финальная версия под вакансию: {{ resume.vacancy.title or "Вакансия #" ~ resume.vacancy_id }}.
+            Проверьте текст перед отправкой и скачайте удобный формат.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a
+            href="/result?vacancy_id={{ resume.vacancy_id }}&resume_id={{ resume.id }}&run=1#documents"
+            class="btn btn-secondary"
+            data-loading-link
+            data-loading-messages="Возвращаемся к анализу|Поднимаем подобранное резюме|Готовим полный экран с результатами|Почти открыли аналитику"
+        >К анализу</a>
+        <a href="/result/resume/{{ resume.id }}/export-latex" class="btn btn-secondary">Скачать LaTeX</a>
+        <a href="/result/resume/{{ resume.id }}/export-pdf" class="btn btn-primary">Скачать PDF</a>
+    </div>
+</section>
+
+<section class="card full-document-card">
+    <div class="document-paper">
+        <div class="document-paper-header">
+            <h1>{{ contact.get("full_name", "") }}</h1>
+            <p class="document-subtitle">{{ data.get("target_position", "") }}</p>
+            <p>
+                {{ contact.get("email", "") }}
+                {% if contact.get("phone") %} · {{ contact.get("phone") }}{% endif %}
+                {% if contact.get("city") %} · {{ contact.get("city") }}{% endif %}
+                {% if contact.get("work_format") %} · {{ contact.get("work_format") }}{% endif %}
+            </p>
+            {% if contact.get("github_url") or contact.get("linkedin_url") %}
+                <p>
+                    {% if contact.get("github_url") %}<a href="{{ contact.get("github_url") }}" target="_blank">{{ contact.get("github_url") }}</a>{% endif %}
+                    {% if contact.get("linkedin_url") %} · <a href="{{ contact.get("linkedin_url") }}" target="_blank">{{ contact.get("linkedin_url") }}</a>{% endif %}
+                </p>
+            {% endif %}
+        </div>
+
+        {% if data.get("skills") %}
+            <section class="document-section">
+                <h3>Технические навыки</h3>
+                {% set skills = data.get("skills", {}) %}
+                {% if skills.get("relevant") %}
+                    <p><strong>Стек и технологии:</strong> {{ skills.get("relevant")|join(", ") }}</p>
+                {% endif %}
+                {% if skills.get("other") %}
+                    <p><strong>Дополнительные инструменты:</strong> {{ skills.get("other")|join(", ") }}</p>
+                {% endif %}
+                {% if skills.get("soft") %}
+                    <p><strong>Профессиональные качества:</strong> {{ skills.get("soft")|join(", ") }}</p>
+                {% endif %}
+            </section>
+        {% endif %}
+
+        {% if data.get("experience") %}
+            <section class="document-section">
+                <h3>Опыт работы</h3>
+                {% for item in data.get("experience", []) %}
+                    {% if item.company or item.position or item.tasks or item.achievements %}
+                        <article class="document-entry">
+                            <h4>{{ item.position or item.title or "Опыт" }}{% if item.company %} · {{ item.company }}{% endif %}</h4>
+                            {% if item.city or item.location or item.period %}
+                                <p class="muted-text">
+                                    {% if item.city or item.location %}{{ item.city or item.location }}{% endif %}
+                                    {% if (item.city or item.location) and item.period %} · {% endif %}
+                                    {% if item.period %}{{ item.period }}{% endif %}
+                                </p>
+                            {% endif %}
+                            {% if item.tasks %}
+                                <ul>
+                                    {% for task in item.tasks %}
+                                        <li>{{ task }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                            {% if item.achievements %}
+                                <p><strong>Достижения:</strong></p>
+                                <ul>
+                                    {% for achievement in item.achievements %}
+                                        <li>{{ achievement }}</li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </article>
+                    {% else %}
+                        <p>{{ item }}</p>
+                    {% endif %}
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        {% if data.get("projects") %}
+            <section class="document-section">
+                <h3>Проекты</h3>
+                {% for item in data.get("projects", []) %}
+                    {% if item.name or item.title or item.description or item.result %}
+                        <article class="document-entry">
+                            <h4>{{ item.name or item.title or "Проект" }}{% if item.role %} · {{ item.role }}{% endif %}</h4>
+                            {% if item.stack %}<p><strong>Стек:</strong> {{ item.stack|join(", ") }}</p>{% endif %}
+                            {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                            {% if item.result %}<p><strong>Результат:</strong> {{ item.result }}</p>{% endif %}
+                        </article>
+                    {% else %}
+                        <p>{{ item }}</p>
+                    {% endif %}
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        {% for section_title, section_key in [("Образование", "education"), ("Сертификаты", "certificates")] %}
+            {% if data.get(section_key) %}
+                <section class="document-section">
+                    <h3>{{ section_title }}</h3>
+                    <ul>
+                        {% for item in data.get(section_key, []) %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
+        {% endfor %}
+
+        {% if data.get("summary") %}
+            <section class="document-section">
+                <h3>О себе</h3>
+                {% for line in data.get("summary", []) %}
+                    <p>{{ line }}</p>
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        {% if data.get("languages") %}
+            <section class="document-section">
+                <h3>Дополнительная информация</h3>
+                <ul>
+                    {% for item in data.get("languages", []) %}
+                        <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
