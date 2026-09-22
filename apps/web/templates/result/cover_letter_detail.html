@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+{% set data = letter.letter_json %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Готовый документ</span>
+        <h2>Сопроводительное письмо</h2>
+        <p>
+            Короткое письмо под вакансию: {{ letter.vacancy.title or "Вакансия #" ~ letter.vacancy_id }}.
+            Проверьте тон, факты и скачайте файл для отклика.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a
+            href="/result?vacancy_id={{ letter.vacancy_id }}&run=1#documents"
+            class="btn btn-secondary"
+            data-loading-link
+            data-loading-messages="Возвращаемся к анализу|Поднимаем письмо к нужной вакансии|Готовим полный экран с результатами|Почти открыли аналитику"
+        >К анализу</a>
+        <a href="/result/cover-letter/{{ letter.id }}/export-latex" class="btn btn-secondary">Скачать LaTeX</a>
+        <a href="/result/cover-letter/{{ letter.id }}/export-pdf" class="btn btn-primary">Скачать PDF</a>
+    </div>
+</section>
+
+<section class="card full-document-card">
+    <div class="document-paper letter-paper">
+        <div class="document-paper-header left">
+            <h1>{{ data.get("subject", "Сопроводительное письмо") }}</h1>
+            <p class="document-subtitle">{{ data.get("vacancy_title", "") }}</p>
+        </div>
+
+        <section class="document-section">
+            <p>{{ data.get("greeting", "Здравствуйте!") }}</p>
+            {% for paragraph in data.get("paragraphs", []) %}
+                <p>{{ paragraph }}</p>
+            {% endfor %}
+            {% if data.get("closing") %}
+                <p>{{ data.get("closing") }}</p>
+            {% endif %}
+            {% if data.get("candidate_name") %}
+                <p><strong>{{ data.get("candidate_name") }}</strong></p>
+            {% endif %}
+        </section>
+    </div>
+</section>
+{% endblock %}

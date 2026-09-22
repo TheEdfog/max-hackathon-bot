@@ -1,0 +1,396 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Аналитическая система</span>
+        <h2>Проверьте вакансию и подготовьте отклик</h2>
+        <p>
+            Выберите вакансию, посчитайте match и посмотрите, что уже подтверждено профилем,
+            а что стоит усилить. Когда результат устроит, соберите резюме и сопроводительное письмо.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a href="/vacancies" class="btn btn-secondary">К вакансиям</a>
+        <a href="/profiles" class="btn btn-secondary">К профилю</a>
+    </div>
+</section>
+
+{% if analysis_error %}
+    <div class="page-notice page-notice-danger">{{ analysis_error }}</div>
+{% endif %}
+
+<section class="card">
+    <form
+        action="/result"
+        method="get"
+        class="form-grid compact-form"
+        data-loading-form
+        data-clear-analysis-cache
+        data-loading-messages="Считаем совпадение профиля и вакансии|Проверяем must-have требования|Оцениваем nice-to-have навыки|Сверяем доказательства в профиле|Ищем сильные совпадения|Находим пробелы без паники|Готовим рекомендации|Собираем понятную картину match|Проверяем, что выводы объяснимы|Почти готово"
+    >
+        <input type="hidden" name="run" value="1">
+        <label class="form-label">
+            <span>Выберите вакансию для анализа</span>
+            <select name="vacancy_id" required>
+                <option value="">Выберите вакансию</option>
+                {% for item in vacancies %}
+                    <option value="{{ item.id }}" {% if vacancy and item.id == vacancy.id %}selected{% endif %}>
+                        {{ item.title or "Вакансия #" ~ item.id }}
+                    </option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Посчитать match</button>
+            <a href="/vacancies/create" class="btn btn-secondary">Добавить вакансию</a>
+        </div>
+    </form>
+</section>
+
+{% if vacancy and not match_result %}
+    <section class="page-notice page-notice-info">
+        Вакансия выбрана. Проверьте выбор в списке выше и нажмите «Посчитать match», когда будете готовы запустить анализ.
+    </section>
+{% endif %}
+
+{% if vacancy and match_result %}
+    <section class="score-grid">
+        <article class="score-card score-main">
+            <span>Итоговый match</span>
+            <strong>{{ match_result.total_pct }}%</strong>
+            <small>Общая оценка совпадения профиля с вакансией</small>
+        </article>
+        <article class="score-card">
+            <span>Must</span>
+            <strong>{{ match_result.must_pct }}%</strong>
+            <small>{{ match_result.must_count }} требований</small>
+        </article>
+        <article class="score-card">
+            <span>Nice</span>
+            <strong>{{ match_result.nice_pct }}%</strong>
+            <small>{{ match_result.nice_count }} требований</small>
+        </article>
+        <article class="score-card">
+            <span>Пробелы</span>
+            <strong>{{ match_result.missing_count }}</strong>
+            <small>требуют обучения или опыта</small>
+        </article>
+    </section>
+
+    {% if low_match_warning %}
+        <section class="page-notice page-notice-warning">
+            <strong>Низкое соответствие вакансии.</strong>
+            {{ low_match_warning }}
+        </section>
+    {% endif %}
+
+    <section class="card">
+        <div class="entity-card-header">
+            <div>
+                <h3>{{ vacancy.title or "Вакансия #" ~ vacancy.id }}</h3>
+                <p>Ниже видно, какие требования уже подтверждены вашим профилем, а где есть пробелы.</p>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Требование</th>
+                        <th>Тип</th>
+                        <th>Статус</th>
+                        <th>Подтверждение</th>
+                        <th>Обоснование</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in match_result.requirements %}
+                        <tr>
+                            <td>
+                                <strong>{{ item.display_name or item.skill_norm }}</strong>
+                                <br><small class="muted-text">{{ item.category or "other" }}</small>
+                            </td>
+                            <td>{{ item.type }}</td>
+                            <td><span class="badge badge-{{ 'success' if item.status == 'matched' else 'warning' if item.status == 'partial' else 'danger' }}">{{ item.status }}</span></td>
+                            <td>{{ item.evidence_percent }}%</td>
+                            <td>
+                                {{ item.source }}
+                                {% if item.source_text %}
+                                    <br><small class="muted-text match-source-fragment">Фрагмент: {{ item.source_text_short or item.source_text|truncate(180, true, '…') }}</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if soft_skill_requirements %}
+            <form
+                action="/result/{{ vacancy.id }}/soft-skills"
+                method="post"
+                class="soft-skill-analysis-panel"
+                data-clear-analysis-cache
+            >
+                <div>
+                    <strong>Soft skills из вакансии</strong>
+                    <p class="muted-text">
+                        Если эти качества действительно есть у вас, отметьте их. РезюмИТ добавит выбранное в профиль,
+                        а потом будет просить подтверждать качества примерами, а не просто писать их списком.
+                    </p>
+                </div>
+                <div class="checkbox-grid">
+                    {% for item in soft_skill_requirements %}
+                        <label class="checkbox-card {% if item.already_in_profile %}checkbox-card-muted{% endif %}">
+                            <input
+                                type="checkbox"
+                                name="soft_skill"
+                                value="{{ item.value }}"
+                                {% if item.already_in_profile %}checked disabled{% endif %}
+                            >
+                            <span>
+                                {{ item.label }}
+                                <small class="muted-text"> · {{ item.type }} · {{ "уже в профиле" if item.already_in_profile else item.status }}</small>
+                            </span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-secondary">Добавить выбранное в профиль</button>
+            </form>
+        {% endif %}
+    </section>
+
+    <section class="recommendation-grid">
+        <article class="card">
+            <h3>Что поменять в резюме</h3>
+            {% if recommendations.resume_edit %}
+                <div class="recommendation-scroll">
+                    {% for rec in recommendations.resume_edit %}
+                        <div class="recommendation-card">
+                            <div class="recommendation-title-row">
+                                <span class="badge badge-neutral">#{{ loop.index }}</span>
+                                <strong>{{ rec.title }}</strong>
+                            </div>
+                            <p>{{ rec.reason }}</p>
+                            <p><strong>Действие:</strong> {{ rec.action }}</p>
+                            <small>
+                                {% if rec.impact_kind == "exact" %}
+                                    Можно добрать: {{ rec.impact_on_match }} п.п.
+                                {% else %}
+                                    Ориентир влияния: {{ rec.impact_on_match }} п.п.
+                                {% endif %}
+                                · сложность: {{ rec.effort }} · {{ rec.based_on }}
+                            </small>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="muted-text">Критичных правок резюме не найдено.</p>
+            {% endif %}
+        </article>
+
+        <article class="card">
+            <h3>Что подучить и отработать</h3>
+            {% if recommendations.learn_and_practice %}
+                <div class="recommendation-scroll">
+                    {% for rec in recommendations.learn_and_practice %}
+                        <div class="recommendation-card">
+                            <div class="recommendation-title-row">
+                                <span class="badge badge-neutral">#{{ loop.index }}</span>
+                                <strong>{{ rec.title }}</strong>
+                            </div>
+                            <p>{{ rec.reason }}</p>
+                            <p><strong>Действие:</strong> {{ rec.action }}</p>
+                            <small>
+                                {% if rec.impact_kind == "exact" %}
+                                    Можно добрать: {{ rec.impact_on_match }} п.п.
+                                {% else %}
+                                    Ориентир влияния: {{ rec.impact_on_match }} п.п.
+                                {% endif %}
+                                · сложность: {{ rec.effort }} · {{ rec.based_on }}
+                            </small>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="muted-text">Система не нашла критичных пробелов для этой вакансии.</p>
+            {% endif %}
+        </article>
+    </section>
+
+    <section class="card document-generation-card" id="documents">
+        <div class="entity-card-header">
+            <div>
+                <span class="eyebrow">Документы для отклика</span>
+                <h3>Резюме и сопроводительное письмо</h3>
+                <p>
+                    Профиль может содержать весь ваш опыт. РезюмИТ сам выбирает релевантное под вакансию,
+                    а вы проверяете результат, правите естественным языком или скачиваете готовые файлы.
+                </p>
+            </div>
+        </div>
+
+        <div class="document-generation-grid">
+            <form
+                action="/result/{{ vacancy.id }}/generate"
+                method="post"
+                class="generation-panel"
+                data-loading-form
+                data-loading-messages="Упаковываем ваш опыт|Сверяем стек с вакансией|Отбираем сильные аргументы|Убираем нерелевантный шум|Проверяем, чтобы не выдумать лишнего|Собираем аккуратное резюме|Расставляем акценты для ATS|Делаем текст удобным для рекрутера|Полируем формулировки|Готовим финальную версию"
+            >
+                <label class="compact-select-label">
+                    <span>Метрики достижений</span>
+                    <select name="metrics_mode">
+                        <option value="strict">Без выдумываний</option>
+                        <option value="assist">Помочь оценить метрики</option>
+                    </select>
+                    <small class="form-help">Во втором режиме система осторожно предложит реалистичные оценки, если они выводятся из ваших задач и достижений.</small>
+                </label>
+                <button type="submit" class="btn btn-primary">Сгенерировать резюме</button>
+            </form>
+
+            <form
+                action="/result/{{ vacancy.id }}/generate-cover-letter"
+                method="post"
+                class="generation-panel"
+                data-loading-form
+                data-loading-messages="Ищем главный аргумент для отклика|Собираем короткое письмо|Убираем воду|Настраиваем тон под вакансию|Выбираем 2-3 сильных факта|Не дублируем резюме целиком|Делаем письмо живым|Проверяем деловой стиль|Готовим текст для рекрутера|Почти закончили"
+            >
+                <div>
+                    <strong>Сопроводительное письмо</strong>
+                    <p class="muted-text">
+                        Короткое письмо на 3-6 абзацев: мотивация, релевантные аргументы и аккуратный призыв к контакту.
+                    </p>
+                </div>
+                <button type="submit" class="btn btn-primary">Сгенерировать письмо</button>
+            </form>
+        </div>
+
+        {% if selected_resume or cover_letter %}
+            <div class="document-grid">
+                {% if selected_resume %}
+                    <article class="document-card">
+                        <div class="entity-card-header">
+                            <div>
+                                <h4>Резюме #{{ selected_resume.id }}</h4>
+                                <p>Создано: {{ selected_resume.created_at.strftime("%d.%m.%Y %H:%M") if selected_resume.created_at else "-" }}</p>
+                            </div>
+                        </div>
+
+                        {% set resume_notes = selected_resume.resume_json.get("ats_notes", {}) %}
+                        {% set resume_status = resume_notes.get("llm_status") if resume_notes else none %}
+                        {% if resume_status in ["deepseek", "deepseek_revision"] %}
+                            <div class="page-notice page-notice-success inline-notice">
+                                Резюме подготовлено РезюмИТ на основе профиля, вакансии и match-анализа.
+                            </div>
+                        {% elif resume_status %}
+                            <div class="page-notice page-notice-warning inline-notice">
+                                Резюме собрано в резервном режиме. Можно повторить генерацию позже.
+                            </div>
+                        {% endif %}
+                        {% if low_match_warning %}
+                            <div class="page-notice page-notice-warning inline-notice">
+                                {{ low_match_warning }}
+                            </div>
+                        {% endif %}
+
+                        <div class="resume-preview compact-document-preview">
+                            <h4>{{ selected_resume.resume_json.contact.full_name }}</h4>
+                            <p>{{ selected_resume.resume_json.target_position }}</p>
+                            {% for line in selected_resume.resume_json.summary %}
+                                <p>{{ line }}</p>
+                            {% endfor %}
+                        </div>
+
+                        <div class="inline-actions">
+                            <a href="/result/resume/{{ selected_resume.id }}" class="btn btn-secondary">Читать полностью</a>
+                            <a href="/result/resume/{{ selected_resume.id }}/export-latex" class="btn btn-secondary">LaTeX</a>
+                            <a href="/result/resume/{{ selected_resume.id }}/export-pdf" class="btn btn-primary">PDF</a>
+                        </div>
+
+                        <form
+                            action="/result/resume/{{ selected_resume.id }}/revise"
+                            method="post"
+                            class="form-grid"
+                            data-loading-form
+                            data-trim-instruction-form
+                            data-loading-messages="Читаем ваши правки|Аккуратно перестраиваем резюме|Сохраняем факты из профиля|Не добавляем неподтверждённый опыт|Сверяем структуру документа|Полируем формулировки|Готовим новую версию"
+                        >
+                            <label class="form-label">
+                                <span>Правка резюме естественным языком</span>
+                                <textarea name="instruction" rows="4" placeholder="Например: сделай блок о себе менее шаблонным, но не добавляй новый опыт"></textarea>
+                                <small class="form-help">Система сохранит запрет на выдуманные факты и будет опираться на ваш профиль.</small>
+                            </label>
+                            <button type="submit" class="btn btn-secondary">Перегенерировать резюме</button>
+                        </form>
+                    </article>
+                {% endif %}
+
+                {% if cover_letter %}
+                    <article class="document-card">
+                        <div class="entity-card-header">
+                            <div>
+                                <h4>Сопроводительное письмо</h4>
+                                <p>Обновлено: {{ cover_letter.updated_at.strftime("%d.%m.%Y %H:%M") if cover_letter.updated_at else "-" }}</p>
+                            </div>
+                        </div>
+
+                        {% set letter_notes = cover_letter.letter_json.get("notes", {}) %}
+                        {% set letter_status = letter_notes.get("llm_status") if letter_notes else none %}
+                        {% if letter_status in ["deepseek", "deepseek_revision"] %}
+                            <div class="page-notice page-notice-success inline-notice">
+                                Письмо подготовлено РезюмИТ под выбранную вакансию.
+                            </div>
+                        {% elif letter_status %}
+                            <div class="page-notice page-notice-warning inline-notice">
+                                Письмо собрано в резервном режиме. Можно повторить генерацию позже.
+                            </div>
+                        {% endif %}
+                        {% if low_match_warning %}
+                            <div class="page-notice page-notice-warning inline-notice">
+                                {{ low_match_warning }}
+                            </div>
+                        {% endif %}
+
+                        <div class="letter-preview compact-document-preview">
+                            <h4>{{ cover_letter.letter_json.get("subject", "Сопроводительное письмо") }}</h4>
+                            <p>{{ cover_letter.letter_json.get("greeting", "Здравствуйте!") }}</p>
+                            {% for paragraph in cover_letter.letter_json.get("paragraphs", []) %}
+                                {% if loop.index <= 2 %}
+                                    <p>{{ paragraph }}</p>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+
+                        <div class="inline-actions">
+                            <a href="/result/cover-letter/{{ cover_letter.id }}" class="btn btn-secondary">Читать полностью</a>
+                            <a href="/result/cover-letter/{{ cover_letter.id }}/export-latex" class="btn btn-secondary">LaTeX</a>
+                            <a href="/result/cover-letter/{{ cover_letter.id }}/export-pdf" class="btn btn-primary">PDF</a>
+                        </div>
+
+                        <form
+                            action="/result/cover-letter/{{ cover_letter.id }}/revise"
+                            method="post"
+                            class="form-grid"
+                            data-loading-form
+                            data-trim-instruction-form
+                            data-loading-messages="Читаем ваши пожелания|Переписываем письмо без лишней воды|Сохраняем деловой тон|Оставляем только подтверждённые факты|Делаем текст компактнее|Готовим обновлённый вариант"
+                        >
+                            <label class="form-label">
+                                <span>Правка письма естественным языком</span>
+                                <textarea name="instruction" rows="4" placeholder="Например: сделай письмо короче и добавь больше мотивации, не придумывая новый опыт"></textarea>
+                                <small class="form-help">Правки применяются к единственному письму для этой вакансии.</small>
+                            </label>
+                            <button type="submit" class="btn btn-secondary">Обновить письмо</button>
+                        </form>
+                    </article>
+                {% endif %}
+            </div>
+        {% else %}
+            <div class="page-notice page-notice-info inline-notice">
+                Когда результат устроит, можно скачать резюме и сопроводительное в LaTeX или PDF и использовать его для отклика.
+            </div>
+        {% endif %}
+    </section>
+{% endif %}
+{% endblock %}

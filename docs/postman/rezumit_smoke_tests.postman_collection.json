@@ -1,0 +1,753 @@
+{
+  "info": {
+    "_postman_id": "d3b9f3d1-3c81-46b6-9be8-51c02c726d13",
+    "name": "РезюмИТ Smoke / E2E Tests",
+    "description": "Набор проверок для диплома: health-check, регистрация тестового пользователя, защищенные страницы, создание профиля, создание вакансии и запуск match-анализа.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "session_cookie",
+      "value": ""
+    },
+    {
+      "key": "run_id",
+      "value": ""
+    },
+    {
+      "key": "test_email",
+      "value": ""
+    },
+    {
+      "key": "test_password",
+      "value": "Postman123!"
+    },
+    {
+      "key": "profile_name",
+      "value": ""
+    },
+    {
+      "key": "vacancy_title",
+      "value": ""
+    },
+    {
+      "key": "profile_id",
+      "value": ""
+    },
+    {
+      "key": "vacancy_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Initialize Run And Health Check",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const runId = Date.now().toString();",
+              "pm.collectionVariables.set('run_id', runId);",
+              "pm.collectionVariables.set('test_email', `postman.rezumit.${runId}@example.com`);",
+              "pm.collectionVariables.set('test_password', 'Postman123!');",
+              "pm.collectionVariables.set('profile_name', `Postman Test Candidate ${runId}`);",
+              "pm.collectionVariables.set('vacancy_title', `Postman Backend Test Vacancy ${runId}`);",
+              "pm.collectionVariables.unset('session_cookie');",
+              "pm.collectionVariables.unset('profile_id');",
+              "pm.collectionVariables.unset('vacancy_id');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('server returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('health response is JSON with status=ok', function () {",
+              "  const data = pm.response.json();",
+              "  pm.expect(data.status).to.eql('ok');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "02. Login Page Is Available",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('login page returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('login page contains HTML', function () {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "login"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "03. Register Test User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('registration redirects after success', function () {",
+              "  pm.response.to.have.status(302);",
+              "});",
+              "",
+              "const setCookie = pm.response.headers.get('Set-Cookie') || '';",
+              "pm.test('auth cookie is issued', function () {",
+              "  pm.expect(setCookie).to.include('cvservice_session=');",
+              "});",
+              "",
+              "const cookieMatch = setCookie.match(/cvservice_session=([^;]+)/);",
+              "if (cookieMatch) {",
+              "  pm.collectionVariables.set('session_cookie', cookieMatch[1]);",
+              "}",
+              "",
+              "pm.test('session cookie saved for next requests', function () {",
+              "  pm.expect(pm.collectionVariables.get('session_cookie')).to.be.ok;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "followRedirects": false
+      },
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "email",
+              "value": "{{test_email}}",
+              "type": "text"
+            },
+            {
+              "key": "password",
+              "value": "{{test_password}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/register",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "register"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "04. Dashboard Opens For Authorized User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('dashboard returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('dashboard contains application name', function () {",
+              "  pm.expect(pm.response.text()).to.include('РезюмИТ');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/dashboard",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "dashboard"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "05. Create Candidate Profile",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('profile creation redirects after success', function () {",
+              "  pm.response.to.have.status(302);",
+              "});",
+              "",
+              "const location = pm.response.headers.get('Location') || '';",
+              "const match = location.match(/\\/profiles\\/(\\d+)/);",
+              "if (match) {",
+              "  pm.collectionVariables.set('profile_id', match[1]);",
+              "}",
+              "",
+              "pm.test('profile id extracted from redirect', function () {",
+              "  pm.expect(pm.collectionVariables.get('profile_id')).to.be.ok;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "followRedirects": false
+      },
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "full_name",
+              "value": "{{profile_name}}",
+              "type": "text"
+            },
+            {
+              "key": "target_position",
+              "value": "Backend-разработчик / Backend Developer (Python)",
+              "type": "text"
+            },
+            {
+              "key": "email",
+              "value": "{{test_email}}",
+              "type": "text"
+            },
+            {
+              "key": "phone",
+              "value": "+7 999 000-00-00",
+              "type": "text"
+            },
+            {
+              "key": "city",
+              "value": "Москва",
+              "type": "text"
+            },
+            {
+              "key": "work_format",
+              "value": "удаленно или гибрид",
+              "type": "text"
+            },
+            {
+              "key": "github_url",
+              "value": "https://github.com/postman-rezumit-demo",
+              "type": "text"
+            },
+            {
+              "key": "summary_text",
+              "value": "Backend-разработчик, работаю с Python, FastAPI, PostgreSQL, REST API и Docker. Интересуюсь качественной архитектурой и понятной документацией API.",
+              "type": "text"
+            },
+            {
+              "key": "skills_text",
+              "value": "Python, FastAPI, PostgreSQL, SQL, REST API, Docker, Git, Linux, pytest, asyncio, Pydantic",
+              "type": "text"
+            },
+            {
+              "key": "soft_skill_option",
+              "value": "teamwork",
+              "type": "text"
+            },
+            {
+              "key": "soft_skill_option",
+              "value": "problem solving",
+              "type": "text"
+            },
+            {
+              "key": "languages_text",
+              "value": "Русский — родной, английский — чтение технической документации",
+              "type": "text"
+            },
+            {
+              "key": "experience_company",
+              "value": "Учебная проектная лаборатория",
+              "type": "text"
+            },
+            {
+              "key": "experience_position",
+              "value": "Backend-разработчик",
+              "type": "text"
+            },
+            {
+              "key": "experience_city",
+              "value": "Москва",
+              "type": "text"
+            },
+            {
+              "key": "experience_start",
+              "value": "2025-02",
+              "type": "text"
+            },
+            {
+              "key": "experience_end",
+              "value": "2025-06",
+              "type": "text"
+            },
+            {
+              "key": "experience_tasks",
+              "value": "Разрабатывал REST API на FastAPI, проектировал таблицы PostgreSQL, писал SQL-запросы, подключал Docker и документировал эндпоинты через OpenAPI.",
+              "type": "text"
+            },
+            {
+              "key": "experience_achievements",
+              "value": "Собрал рабочий backend-прототип сервиса учета заявок и сократил ручную обработку тестовых данных за счет автоматизации статусов.",
+              "type": "text"
+            },
+            {
+              "key": "project_name",
+              "value": "ATS-анализатор резюме",
+              "type": "text"
+            },
+            {
+              "key": "project_stack",
+              "value": "Python, FastAPI, PostgreSQL, Jinja2",
+              "type": "text"
+            },
+            {
+              "key": "project_role",
+              "value": "Backend-разработчик",
+              "type": "text"
+            },
+            {
+              "key": "project_description",
+              "value": "Реализовал хранение профилей, вакансий и расчет match по требованиям вакансии.",
+              "type": "text"
+            },
+            {
+              "key": "project_result",
+              "value": "Получился веб-прототип для сравнения профиля кандидата с вакансией.",
+              "type": "text"
+            },
+            {
+              "key": "education_org",
+              "value": "НИТУ МИСИС",
+              "type": "text"
+            },
+            {
+              "key": "education_program",
+              "value": "Информационные системы и технологии",
+              "type": "text"
+            },
+            {
+              "key": "education_start",
+              "value": "2022",
+              "type": "text"
+            },
+            {
+              "key": "education_end",
+              "value": "2026",
+              "type": "text"
+            },
+            {
+              "key": "education_details",
+              "value": "Дипломный проект связан с адаптацией резюме под IT-вакансии.",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/profiles/create",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "profiles",
+            "create"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "06. Profile Page Shows Saved Data",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('profiles page returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('profiles page contains test candidate', function () {",
+              "  pm.expect(pm.response.text()).to.include(pm.collectionVariables.get('profile_name'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/profiles",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "profiles"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "07. Create Vacancy From Text",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('vacancy creation redirects after success', function () {",
+              "  pm.response.to.have.status(302);",
+              "});",
+              "",
+              "pm.test('redirects to vacancies page', function () {",
+              "  const location = pm.response.headers.get('Location') || '';",
+              "  pm.expect(location).to.include('/vacancies');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "followRedirects": false
+      },
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "title",
+              "value": "{{vacancy_title}}",
+              "type": "text"
+            },
+            {
+              "key": "source_url",
+              "value": "",
+              "type": "text"
+            },
+            {
+              "key": "raw_text",
+              "value": "Мы ищем backend-разработчика. Требования: уверенное знание Python 3, опыт FastAPI, PostgreSQL, проектирование схем БД, REST API, Docker, Git, Linux, понимание asyncio и Pydantic. Будет плюсом: Redis, pytest, CI/CD, микросервисная архитектура. Обязанности: разрабатывать backend-сервисы, документировать API, оптимизировать SQL-запросы.",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/vacancies/create",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "vacancies",
+            "create"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "08. Vacancies Page Shows Saved Vacancy",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('vacancies page returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const body = pm.response.text();",
+              "const vacancyTitle = pm.collectionVariables.get('vacancy_title');",
+              "pm.test('vacancies page contains test vacancy', function () {",
+              "  pm.expect(body).to.include(vacancyTitle);",
+              "});",
+              "",
+              "function escapeRegex(value) {",
+              "  return value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');",
+              "}",
+              "",
+              "const titlePattern = escapeRegex(vacancyTitle);",
+              "let match = body.match(new RegExp(`<h3>\\\\s*${titlePattern}\\\\s*<\\\\/h3>[\\\\s\\\\S]*?action=\\\"/vacancies/(\\\\d+)/extract\\\"`));",
+              "if (!match) {",
+              "  const allMatches = Array.from(body.matchAll(/action=\\\"\\/vacancies\\/(\\d+)\\/extract\\\"/g));",
+              "  match = allMatches.length ? allMatches[allMatches.length - 1] : null;",
+              "}",
+              "if (match) {",
+              "  pm.collectionVariables.set('vacancy_id', match[1]);",
+              "}",
+              "",
+              "pm.test('vacancy id extracted from HTML', function () {",
+              "  pm.expect(pm.collectionVariables.get('vacancy_id')).to.be.ok;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/vacancies",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "vacancies"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "09. Extract Requirements And Open Analysis",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('extract action redirects to analysis page', function () {",
+              "  pm.response.to.have.status(302);",
+              "});",
+              "",
+              "pm.test('redirect contains selected vacancy id', function () {",
+              "  const location = pm.response.headers.get('Location') || '';",
+              "  pm.expect(location).to.include(`/result?vacancy_id=${pm.collectionVariables.get('vacancy_id')}`);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "followRedirects": false
+      },
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/vacancies/{{vacancy_id}}/extract",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "vacancies",
+            "{{vacancy_id}}",
+            "extract"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "10. Analysis Page Opens With Selected Vacancy",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('analysis page returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('analysis page contains selected vacancy', function () {",
+              "  pm.expect(pm.response.text()).to.include(pm.collectionVariables.get('vacancy_title'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/result?vacancy_id={{vacancy_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "result"
+          ],
+          "query": [
+            {
+              "key": "vacancy_id",
+              "value": "{{vacancy_id}}"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "11. Run Match Analysis",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('match analysis returns 200 OK', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const body = pm.response.text();",
+              "pm.test('match analysis contains score block', function () {",
+              "  pm.expect(body).to.include('Итоговый match');",
+              "});",
+              "",
+              "pm.test('match analysis contains recommendations block', function () {",
+              "  pm.expect(body).to.satisfy(text => text.includes('Что поменять') || text.includes('Что получить') || text.includes('рекомендац'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Cookie",
+            "value": "cvservice_session={{session_cookie}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/result?vacancy_id={{vacancy_id}}&run=true",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "result"
+          ],
+          "query": [
+            {
+              "key": "vacancy_id",
+              "value": "{{vacancy_id}}"
+            },
+            {
+              "key": "run",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
