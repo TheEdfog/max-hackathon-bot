@@ -36,3 +36,14 @@ storage/*.log
 docs/*.docx
 docs/assets_test.png
 docs/test_reports/
+.env.*
+!.env.example
+!.env.production.example
+!.env.hiring.example
+*.pem
+*.key
+ssh-key-*.zip
+data/
+test-results/
+.coverage
+playwright-report/
