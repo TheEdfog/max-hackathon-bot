@@ -4,6 +4,8 @@
 
 **Запуск, команды и тестовый сценарий: [docs/MAX-BOT.md](docs/MAX-BOT.md).**
 
+Техническая проверка хакатона: [DATA-API.yaml](DATA-API.yaml), [openapi.json](openapi.json), [инструкция](docs/DATA-API.md). Пока это локально проверенный черновик: перед сдачей нужен реальный HTTPS-адрес вместо заглушки и отдельные тестовые аккаунты.
+
 - Бэкенд: `hiring/`; тесты: `hiring_tests/`.
 - Локальный запуск: `python -m hiring.polling` (настроить `.env.hiring`).
 - Docker: `docker compose -f compose.hiring.yml up --build -d`.

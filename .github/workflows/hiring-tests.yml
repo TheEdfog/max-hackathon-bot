@@ -11,5 +11,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-hiring.lock
       - run: pip install -r requirements-hiring.lock
+      - run: pip install -r requirements-data-api.lock
+      - run: python tools/data_api/validate_data_api.py DATA-API.yaml
       - run: python -m pytest hiring_tests -q
       - run: docker build -f Dockerfile.hiring -t rezumit-hiring:test .
