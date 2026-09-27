@@ -69,6 +69,16 @@ class AssessmentTemplate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AiTestDraft(Base):
+    __tablename__ = 'hiring_ai_test_drafts'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    digest: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(20), default='reserved')
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+
+
 class ApplicationReview(Base):
     __tablename__ = 'hiring_application_reviews'
     application_id: Mapped[str] = mapped_column(ForeignKey('hiring_applications.id'), primary_key=True)

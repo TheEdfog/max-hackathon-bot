@@ -6,7 +6,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 import httpx
 from .pdf_extract import MAX_BYTES, extract_pdf
 
@@ -43,13 +43,9 @@ def source_kind(value):
         return 'github'
     if p.hostname in ('disk.yandex.ru', 'disk.yandex.com', 'yadi.sk') and re.fullmatch(r'/[di]/[A-Za-z0-9_-]+/?', p.path):
         return 'yandex'
-    if p.hostname == 'drive.google.com' and (
-            re.fullmatch(r'/file/d/[A-Za-z0-9_-]+(?:/view)?/?', p.path)
-            or p.path in ('/open', '/uc') and re.fullmatch(r'[A-Za-z0-9_-]+', parse_qs(p.query).get('id', [''])[0])):
-        return 'google'
-    if p.hostname == 'cloud.mail.ru' and re.fullmatch(r'/public/[A-Za-z0-9]+/[A-Za-z0-9]+/?', p.path):
-        return 'mail'
-    raise SourceError('Поддерживаются ссылки на GitHub, файлы Яндекс Диска, Google Drive и Облака Mail.ru. Для остальных источников загрузите PDF или вставьте текст.')
+    if p.hostname in ('drive.google.com', 'cloud.mail.ru'):
+        raise SourceError('Импорт Google Drive и Mail.ru отключён до согласования с организаторами. Вставьте текст, используйте Яндекс Диск или загрузите PDF через API.')
+    raise SourceError('Поддерживаются ссылки на GitHub и файлы Яндекс Диска. Для остальных источников загрузите PDF через API или вставьте текст.')
 
 
 def allowed_download(host, provider):
@@ -57,10 +53,6 @@ def allowed_download(host, provider):
         return host == 'api.github.com'
     if provider == 'yandex':
         return host == 'cloud-api.yandex.net' or bool(re.fullmatch(r'[a-z0-9-]+\.(?:disk\.yandex\.(?:ru|com|net)|storage\.yandex\.net)', host))
-    if provider == 'google':
-        return host in ('drive.google.com', 'drive.usercontent.google.com') or bool(re.fullmatch(r'doc-[a-z0-9-]+-docs\.googleusercontent\.com', host))
-    if provider == 'mail':
-        return host == 'cloud.mail.ru' or bool(re.fullmatch(r'cloclo[0-9]+\.(?:cloud\.mail\.ru|datacloudmail\.ru)', host))
     return False
 
 
@@ -152,25 +144,6 @@ def _import_source(url, reader=None):
             result = reader.json('https://cloud-api.yandex.net/v1/disk/public/resources/download?' +
                                  urlencode({'public_key': url}), provider)
             download = result.get('href', '') if isinstance(result, dict) else ''
-        elif provider == 'mail':
-            # Parse only the public page's JSON download dispatcher, never JS.
-            # This is a best-effort page contract, not a stable official API.
-            page = reader.get(url, provider, limit=1024 * 1024).decode('utf-8', 'replace')
-            marker = re.search(r'"dispatcher"\s*:\s*', page)
-            if not marker:
-                raise SourceError('Mail.ru не предоставил публичную загрузку. Вставьте текст или загрузите PDF через API; вход и ограничения не обходим.')
-            data, _ = json.JSONDecoder().raw_decode(page[marker.end():])
-            root = data['weblink_get']['url']
-            parsed = parsed_url(root)
-            if (not re.fullmatch(r'cloclo[0-9]+\.(?:cloud\.mail\.ru|datacloudmail\.ru)', parsed.hostname)
-                    or not parsed.path.startswith('/public/') or parsed.query or parsed.fragment):
-                raise SourceError('Формат публичной загрузки Mail.ru изменился. Вставьте текст или загрузите PDF через API.')
-            download = root.rstrip('/') + '/' + parsed_url(url).path.strip('/').removeprefix('public/')
-        else:
-            p = parsed_url(url)
-            match = re.search(r'/file/d/([A-Za-z0-9_-]+)', p.path)
-            file_id = match[1] if match else parse_qs(p.query)['id'][0]
-            download = 'https://drive.usercontent.google.com/download?' + urlencode({'id': file_id, 'export': 'download'})
         raw = reader.get(download, provider)
         if not raw.startswith(b'%PDF'):
             raise SourceError('Ссылка не отдала PDF. Проверьте доступ «всем по ссылке». Страницы входа, папки и подтверждения скачивания не обходим.')

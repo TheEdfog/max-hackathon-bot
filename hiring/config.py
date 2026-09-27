@@ -17,6 +17,8 @@ class Config:
     max_api_url: str = field(default_factory=lambda: os.getenv("MAX_API_URL", "https://platform-api2.max.ru"))
     public_url: str = field(default_factory=lambda: os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/"))
     worker: bool = field(default_factory=lambda: os.getenv('HIRING_WORKER', 'true').lower() == 'true')
+    gigachat_enabled: bool = field(default_factory=lambda: os.getenv('HIRING_GIGACHAT_ENABLED', 'false').lower() == 'true')
+    cloudru_api_key: str = field(default_factory=lambda: os.getenv('CLOUDRU_API_KEY', ''), repr=False)
     # CLI-only opt-in; never enabled by the ordinary production environment file.
     sandbox: bool = False
     sandbox_users: tuple[str, ...] = ()

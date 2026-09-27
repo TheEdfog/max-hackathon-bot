@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.4.0"
+    "version": "1.5.0"
   },
   "paths": {
     "/health": {
@@ -2321,6 +2321,82 @@
         }
       }
     },
+    "/api/integrations/v1/tests/ai-skills": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Ai Skills",
+        "operationId": "ai_skills_api_integrations_v1_tests_ai_skills_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response Ai Skills Api Integrations V1 Tests Ai Skills Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/v1/tests/ai-draft": {
+      "post": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Ai Draft",
+        "operationId": "ai_draft_api_integrations_v1_tests_ai_draft_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiDraftBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDraftResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ]
+      }
+    },
     "/api/integrations/v1/tests/{test_id}": {
       "get": {
         "tags": [
@@ -2554,6 +2630,96 @@
           "active"
         ],
         "title": "ActivePatch"
+      },
+      "AiDraftBody": {
+        "properties": {
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Skills"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "junior",
+              "middle",
+              "senior"
+            ],
+            "title": "Level",
+            "default": "junior"
+          },
+          "allow_external_generation": {
+            "type": "boolean",
+            "const": true,
+            "title": "Allow External Generation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "skills",
+          "allow_external_generation"
+        ],
+        "title": "AiDraftBody"
+      },
+      "AiDraftResult": {
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/TestBody"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "gigachat",
+              "local"
+            ],
+            "title": "Source"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "cached": {
+            "type": "boolean",
+            "title": "Cached"
+          },
+          "review_required": {
+            "type": "boolean",
+            "const": true,
+            "title": "Review Required",
+            "default": true
+          },
+          "published": {
+            "type": "boolean",
+            "const": false,
+            "title": "Published",
+            "default": false
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "draft",
+          "source",
+          "model",
+          "cached",
+          "notice"
+        ],
+        "title": "AiDraftResult"
       },
       "AnswersBody": {
         "properties": {

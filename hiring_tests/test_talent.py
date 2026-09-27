@@ -155,11 +155,12 @@ def test_unsafe_urls_rejected(url):
 
 
 def test_source_contracts_and_mail_fallback():
-    assert source_kind('https://cloud.mail.ru/public/abc/def') == 'mail'
+    with pytest.raises(SourceError, match='отключён'):
+        source_kind('https://cloud.mail.ru/public/abc/def')
     class LoginPage:
         def get(self, *args, **kwargs):
             return b'<html>Login required</html>'
-    with pytest.raises(SourceError, match='не предоставил'):
+    with pytest.raises(SourceError, match='отключён'):
         import_source('https://cloud.mail.ru/public/abc/def', LoginPage())
     assert allowed_download('downloader.disk.yandex.ru', 'yandex')
     assert not allowed_download('downloader.disk.yandex.ru.evil.test', 'yandex')
@@ -170,7 +171,7 @@ def test_source_contracts_and_mail_fallback():
             return {'href': 'https://downloader.disk.yandex.ru/fake'}
         def get(self, url, provider):
             return pdf_bytes()
-    for url, provider in [('https://disk.yandex.ru/d/synthetic', 'yandex'), ('https://drive.google.com/file/d/synthetic/view', 'google')]:
+    for url, provider in [('https://disk.yandex.ru/d/synthetic', 'yandex')]:
         result = import_source(url, Fake())
         assert RESUME in result.text and result.pdf.startswith(b'%PDF') and result.provider == provider
 

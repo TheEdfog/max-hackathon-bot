@@ -2,11 +2,12 @@
 import hashlib
 from datetime import datetime
 from typing import Literal
-from fastapi import Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from .assessments import TestBody, attach_test, create_test, owned_test, test_view
+from .ai_questions import AiDraftBody, AiDraftResult, create_draft
 from .db import ApplicationReview, AssessmentTemplate, IntegrationEvent, ResumeDocument, serialize_writes
 from .matching import evidence, extract
 from .pdf_extract import MAX_BYTES, extract_pdf
@@ -253,6 +254,15 @@ def install_talent_routes(router, require, db_session, owned_application):
         rows = list(db.scalars(query.order_by(AssessmentTemplate.id).limit(limit + 1)))
         return {'items': [test_view(row) for row in rows[:limit]],
                 'next_cursor': rows[limit - 1].id if len(rows) > limit else None}
+
+    @router.get('/tests/ai-skills', response_model=list[str])
+    def ai_skills(identity=Depends(require('tests:write'))):
+        from .matching import ALIASES
+        return sorted(ALIASES)
+
+    @router.post('/tests/ai-draft', response_model=AiDraftResult)
+    def ai_draft(body: AiDraftBody, request: Request, identity=Depends(require('tests:write')), db=Depends(db_session)):
+        return create_draft(db, identity[1].id, body, request.app.state.config)
 
     @router.get('/tests/{test_id}', response_model=TestInfo)
     def get_test(test_id: str, identity=Depends(require('tests:read')), db=Depends(db_session)):

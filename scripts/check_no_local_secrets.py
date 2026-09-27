@@ -14,7 +14,7 @@ def main():
     args = parser.parse_args()
     values = dotenv_values(ROOT / '.env.hiring')
     secrets = [value.encode() for key, value in values.items() if value and len(value) >= 8
-               and any(part in key for part in ('TOKEN', 'SECRET', 'PASSWORD', 'EMPLOYER_CODE'))]
+               and any(part in key for part in ('TOKEN', 'SECRET', 'PASSWORD', 'EMPLOYER_CODE', 'API_KEY'))]
     names = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=ROOT).decode().split('\0')
     findings = []
     for name in set(names) - {''}:
