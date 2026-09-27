@@ -62,7 +62,9 @@ def handle_tests(db, user, session, text, reply):
                 reply('Тест для вакансии: ' + (row.title if row else 'без теста') +
                       '.\nКопия вопросов сохранится при публикации.', review_buttons(), bind=True)
             elif command == '/archive-test':
-                row.active = False
+                if row.active:
+                    row.active = False
+                    row.version += 1
                 reply('Тест убран из библиотеки. В опубликованных вакансиях вопросы не изменились.', buttons)
             else:
                 index = min(page_number(parts[2] if len(parts) > 2 else 0), len(row.questions) - 1)

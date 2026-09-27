@@ -315,4 +315,17 @@ def test_max_test_library_and_question_flow(client):
     send(client, 400, '/archive-test ' + tid, 631)
     with client.app.state.factory() as db:
         assert not db.get(AssessmentTemplate, tid).active
+        assert db.get(AssessmentTemplate, tid).version == 2
         assert db.get(Job, jid).test_questions
+
+
+def test_max_manual_requirements_reject_canonical_duplicates(client):
+    client.app.state.config.employer_code = 'synthetic-code'
+    for i, text in enumerate(['/employer synthetic-code', 'Synthetic Company', '/newjob', 'Python role',
+                              'Python skills for a synthetic catalogue and its reports.', 'Python\nпитон']):
+        send(client, 400, text, 700 + i)
+    with client.app.state.factory() as db:
+        owner = db.scalar(select(User).where(User.max_id == '400'))
+        state = db.get(BotSession, owner.id).state
+        assert len(state['requirements']) == 1
+        assert any('не должны повторяться' in o.body.get('text', '') for o in db.scalars(select(Outbox)))

@@ -3,6 +3,7 @@ import hmac
 from datetime import timezone, timedelta
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from core.utils import normalize_skill
 from .db import Application, BotAttempt, Job, User, now
 from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract
@@ -240,10 +241,10 @@ def handle_employer(db, user, session, text, config, reply):
             lines = [line.strip() for line in text.splitlines() if line.strip()]
             if not 1 <= len(lines) <= 15 or any(not 1 <= len(s.lstrip('+').strip()) <= 100 for s in lines):
                 reply("Пришлите от 1 до 15 требований, каждое с новой строки, не более 100 символов.")
-            elif len({s.lstrip('+').strip().lower() for s in lines}) != len(lines):
+            elif len({normalize_skill(s.lstrip('+').strip()) for s in lines}) != len(lines):
                 reply("Требования не должны повторяться.")
             else:
-                requirements = [{"id": f"r{i}", "skill": s.lstrip('+').strip().lower(), "label": s.lstrip('+').strip(), "type": "nice" if s.startswith('+') else "must", "source": "Подтверждено работодателем в MAX"} for i, s in enumerate(lines)]
+                requirements = [{"id": f"r{i}", "skill": normalize_skill(s.lstrip('+').strip()), "label": s.lstrip('+').strip(), "type": "nice" if s.startswith('+') else "must", "source": "Подтверждено работодателем в MAX"} for i, s in enumerate(lines)]
                 session.state = {**state, "requirements": requirements}
                 reply("Обновлено:\n" + requirement_summary(requirements) + "\n\nПодтвердите или пришлите новый список.", review_buttons(), bind=True)
     else:
