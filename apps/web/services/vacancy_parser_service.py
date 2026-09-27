@@ -702,6 +702,18 @@ def _nearest_marker_type(text: str, position: int) -> str | None:
 
 
 def _guess_requirement_type(text: str, position: int) -> str | None:
+    # A modifier can follow its skill: "Docker будет плюсом". An explicit
+    # unambiguous sentence-local modifier overrides an earlier section heading.
+    boundaries = ('\n', '\r', ';', '.', '!', '?')
+    start = max(text.rfind(boundary, 0, position) for boundary in boundaries) + 1
+    ends = [index for boundary in boundaries if (index := text.find(boundary, position)) >= 0]
+    local = text[start:min(ends) if ends else len(text)].lower()
+    nice = any(re.search(r'(?<!\w)' + re.escape(marker) + r'(?!\w)', local) for marker in NICE_MARKERS)
+    must = any(re.search(r'(?<!\w)' + re.escape(marker) + r'(?!\w)', local) for marker in MUST_MARKERS)
+    if nice and not must:
+        return 'nice'
+    if must and not nice:
+        return 'must'
     nearest_marker_type = _nearest_marker_type(text, position)
     if nearest_marker_type in {"nice", "must"}:
         return nearest_marker_type

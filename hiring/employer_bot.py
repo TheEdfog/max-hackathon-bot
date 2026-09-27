@@ -193,7 +193,8 @@ def handle_employer(db, user, session, text, config, reply):
                 db.add(job)
                 db.flush()
                 session.state = {}
-                reply(f"Вакансия опубликована: {job.title}\n\nОтправьте кандидатам:\nhttps://max.ru/{config.bot_name}?start=apply_{job.id}\n\nДля теста попросите коллегу открыть ссылку со своего MAX-аккаунта.", [('Кандидаты', '/candidates ' + job.id), ('Мои вакансии', '/jobs')])
+                next_step = 'В песочнице выберите роль «Кандидат», затем откройте эту ссылку.' if config.sandbox else 'Для теста попросите коллегу открыть ссылку со своего MAX-аккаунта.'
+                reply(f"Вакансия опубликована: {job.title}\n\nОтправьте кандидатам:\nhttps://max.ru/{config.bot_name}?start=apply_{job.id}\n\n{next_step}", [('Кандидаты', '/candidates ' + job.id), ('Мои вакансии', '/jobs')])
         else:
             lines = [line.strip() for line in text.splitlines() if line.strip()]
             if not 1 <= len(lines) <= 15 or any(not 1 <= len(s.lstrip('+').strip()) <= 100 for s in lines):

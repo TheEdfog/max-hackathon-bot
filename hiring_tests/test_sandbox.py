@@ -208,3 +208,16 @@ def test_whoami_uses_authenticated_event_identity_not_text(sandbox):
     assert latest(sandbox, 11).endswith('11')
     with sandbox.app.state.factory() as db:
         assert db.scalar(select(User)) is None
+
+
+@pytest.mark.parametrize('description', [
+    'Обязательны Python и PostgreSQL. Docker будет плюсом.',
+    'Будет плюсом Docker. Python требуется для внутренних сервисов.',
+    'Требования: Python. Docker будет преимуществом.',
+    'Python is required. Docker is optional.',
+])
+def test_optional_modifier_after_skill_does_not_inherit_previous_requirement(description):
+    from hiring.matching import extract
+    requirements = {r['skill']: r['type'] for r in extract(description)}
+    assert requirements['docker'] == 'nice'
+    assert requirements['python'] == 'must'

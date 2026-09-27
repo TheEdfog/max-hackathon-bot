@@ -125,15 +125,18 @@ def test_delivery_status_and_retry(client, status, body, expected):
 
 
 def test_callback_ack_uses_answers_endpoint(client):
-    with client.app.state.factory() as db:
-        db.add(Outbox(max_id='1', callback_id='cb1', body={}))
-        db.commit()
+    send(client, 1, '/start', 'start-ack')
+    click(client, 1, button(client, 1, '/status'), 'cb1')
     captured = []
     def post(url, **kwargs):
-        captured.append((url, kwargs['params']))
+        captured.append((url, kwargs['params'], kwargs['json']))
         return httpx.Response(200, json={'success': True})
     deliver_one(client.app.state.factory, client.app.state.config, post)
     assert captured[0][0].endswith('/answers') and captured[0][1] == {'callback_id': 'cb1'}
+    assert captured[0][2] == {'notification': 'Обрабатываю нажатие…'}
+    with client.app.state.factory() as db:
+        ack = db.scalar(select(Outbox).where(Outbox.callback_id == 'cb1'))
+        assert ack.status == 'sent' and ack.body == {}
 
 
 def test_employer_code_limit_survives_cancel(client):

@@ -88,7 +88,11 @@ def handle_update(db, event, config):
               application_id=app.id, bind=True)
 
     if kind == 'message_callback':
-        db.add(Outbox(max_id=max_id, callback_id=callback['callback_id'], body={}))
+        # MAX rejects an empty acknowledgement with proto.payload (HTTP 400).
+        # A neutral notification also covers stale/foreign-role buttons without
+        # claiming the underlying action succeeded or changing the old message.
+        db.add(Outbox(max_id=max_id, callback_id=callback['callback_id'],
+                      body={'notification': 'Обрабатываю нажатие…'}))
         text = consume_action(db, user, session, callback.get('payload'))
         if text is None:
             reply('Кнопка устарела или уже использована. Откройте меню и повторите действие.')
