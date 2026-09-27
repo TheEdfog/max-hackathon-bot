@@ -46,12 +46,12 @@ def worker():
         raise ValueError()
     chunks, remaining = [], 20000
     for page in reader.pages:
-        text = (page.extract_text() or '')[:remaining]
+        text = page.extract_text() or ''
+        if len(text) > remaining:
+            raise ValueError('PDF text exceeds supported limit')
         chunks.append(text)
         remaining -= len(text) + 1
-        if remaining <= 0:
-            break
-    result = '\n'.join(chunks)[:20000]
+    result = '\n'.join(chunks)
     if len(result.strip()) < 40:
         raise ValueError()
     sys.stdout.buffer.write(result.encode('utf-8'))

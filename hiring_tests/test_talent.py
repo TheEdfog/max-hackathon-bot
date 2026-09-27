@@ -22,7 +22,7 @@ TEST = {'title': 'SQL practice', 'questions': [{'text': 'Explain how you would f
 RESUME = 'Python PostgreSQL: built a synthetic catalogue with tests and documentation.'
 
 
-def pdf_bytes():
+def pdf_bytes(text=RESUME):
     # In-memory synthetic test fixture, not a user's document or a deliverable.
     writer = PdfWriter()
     page = writer.add_blank_page(width=600, height=800)
@@ -30,11 +30,17 @@ def pdf_bytes():
                              NameObject('/BaseFont'): NameObject('/Helvetica')})
     page[NameObject('/Resources')] = DictionaryObject({NameObject('/Font'): DictionaryObject({NameObject('/F1'): font})})
     stream = DecodedStreamObject()
-    stream.set_data(('BT /F1 12 Tf 30 700 Td (' + RESUME + ') Tj ET').encode())
+    stream.set_data(('BT /F1 12 Tf 30 700 Td (' + text + ') Tj ET').encode())
     page[NameObject('/Contents')] = writer._add_object(stream)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
+
+
+def test_long_pdf_is_rejected_not_silently_truncated():
+    from hiring.pdf_extract import extract_pdf
+    with pytest.raises(ValueError):
+        extract_pdf(pdf_bytes('Python ' * 3000))
 
 
 @pytest.mark.parametrize('text,skill,state', [
@@ -259,6 +265,28 @@ def test_import_cancel_during_download_and_expiry(client):
     deliver_import(client.app.state.factory, lambda _: pytest.fail('Expired task must not fetch'))
     with client.app.state.factory() as db:
         assert db.get(ImportTask, tid) is None
+
+
+def test_import_lease_recovery_and_expired_preview_not_sent(client):
+    tid, _ = candidate_import(client)
+    with client.app.state.factory() as db:
+        task = db.get(ImportTask, tid)
+        task.status, task.lease_until = 'working', now() - timedelta(seconds=1)
+        db.commit()
+    assert deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'github', 'Synthetic'))
+    with client.app.state.factory() as db:
+        task = db.get(ImportTask, tid)
+        assert task.status == 'ready'
+        task.expires_at = now() - timedelta(seconds=1)
+        # Focus the delivery guard test on the PII-bearing preview only.
+        for other in db.scalars(select(Outbox).where(Outbox.import_id.is_(None))):
+            other.status = 'sent'
+        db.commit()
+    from hiring.outbox import deliver_one
+    deliver_one(client.app.state.factory, client.app.state.config, lambda *a, **k: pytest.fail('Expired preview must not be sent'))
+    with client.app.state.factory() as db:
+        preview = db.scalar(select(Outbox).where(Outbox.import_id == tid))
+        assert preview.status == 'cancelled' and not preview.body
 
 
 def test_max_test_library_and_question_flow(client):

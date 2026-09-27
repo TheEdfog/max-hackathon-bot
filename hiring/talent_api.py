@@ -114,7 +114,7 @@ def read_pdf(raw):
     try:
         return extract_pdf(raw)
     except ValueError:
-        raise HTTPException(422, 'Нужен текстовый PDF до 10 страниц. Сканы и защищённые PDF не поддерживаются.')
+        raise HTTPException(422, 'Нужен текстовый PDF до 10 страниц и 20 000 символов. Сканы и защищённые PDF не поддерживаются.')
 
 
 def save_pdf(db, application, raw, provider='upload'):

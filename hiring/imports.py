@@ -1,7 +1,7 @@
 """Durable MAX imports. Fetches happen outside the event/SQLite write transaction."""
 from datetime import timedelta, timezone
 from fastapi import HTTPException
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import func, or_, select
 from .chat_ui import page_number, queue_message
 from .db import Application, BotSession, ImportTask, Job, Outbox, User, now, serialize_writes
 from .services import submit
@@ -40,7 +40,7 @@ def queue_import(db, user, session, url):
 def deliver_import(factory, fetch=import_source):
     with factory() as db:
         serialize_writes(db)
-        # TTL also applies after restarts. Pending outbox previews are scrubbed below.
+        # TTL also applies after restarts, including pending outbox previews.
         for old in db.scalars(select(ImportTask).where(ImportTask.expires_at <= now())):
             wipe(db, old)
             session = db.get(BotSession, old.user_id)
