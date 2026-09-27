@@ -12,6 +12,8 @@ from .matching import evidence, extract
 from .pdf_extract import MAX_BYTES, extract_pdf
 from .services import owned_job
 
+ReviewStage = Literal['new', 'reviewing', 'shortlisted', 'on_hold', 'rejected', 'hired']
+
 
 class DraftBody(BaseModel):
     model_config = {'extra': 'forbid'}
@@ -85,7 +87,7 @@ def vacancy_draft(body):
 class ReviewBody(BaseModel):
     model_config = {'extra': 'forbid'}
     expected_version: int = Field(ge=0)
-    stage: Literal['new', 'reviewing', 'shortlisted', 'on_hold', 'rejected', 'hired']
+    stage: ReviewStage
     note: str = Field(default='', max_length=3000)
     tags: list[str] = Field(default_factory=list, max_length=10)
 

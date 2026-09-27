@@ -1083,6 +1083,23 @@
             }
           },
           {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_-]{1,40}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -1222,6 +1239,62 @@
       }
     },
     "/api/integrations/v1/jobs/by-external/{source}/{external_id}": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Get External Job",
+        "operationId": "get_external_job_api_integrations_v1_jobs_by_external__source___external_id__get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,40}$",
+              "title": "Source"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
+              "title": "External Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "put": {
         "tags": [
           "HR integration v1"
@@ -1339,6 +1412,64 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "review_stage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "new",
+                    "reviewing",
+                    "shortlisted",
+                    "on_hold",
+                    "rejected",
+                    "hired"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Stage"
+            }
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
             }
           },
           {

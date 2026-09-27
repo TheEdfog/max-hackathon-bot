@@ -13,6 +13,7 @@ jobs:
       - run: pip install -r requirements-hiring-test.lock
       - run: pip check
       - run: python tools/data_api/validate_data_api.py DATA-API.yaml
+      - run: python scripts/release_check.py
       - run: python -m pytest hiring_tests -q
       - run: docker build -t rezumit-hiring:test .
         timeout-minutes: 5

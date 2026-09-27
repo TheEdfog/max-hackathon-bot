@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
-from .db import Application, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
+from .db import Application, ApplicationReview, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
 from .services import application_view, invite, owned_job
 
 Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'applications:write', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
@@ -165,6 +165,7 @@ def issue_key(db, owner, body):
 
 def install_routes(app, config, db_session, employer, job_view):
     from .main import JobBody, InviteBody
+    from .talent_api import ReviewStage, install_talent_routes
 
     class JobPut(JobBody):
         model_config = {'extra': 'forbid'}
@@ -234,8 +235,11 @@ def install_routes(app, config, db_session, employer, job_view):
 
     @router.get('/jobs', response_model=Page[JobInfo])
     def list_jobs(active: bool | None = None, after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'),
+                  source: str | None = Query(None, pattern=r'^[a-zA-Z0-9_-]{1,40}$'),
                   limit: int = Query(50, ge=1, le=100), identity=Depends(require('jobs:read')), db=Depends(db_session)):
         query = select(Job).where(Job.owner_id == identity[1].id)
+        if source:
+            query = query.join(ExternalJob).where(ExternalJob.source == source, ExternalJob.owner_id == identity[1].id)
         if active is not None:
             query = query.where(Job.active == active)
         if after:
@@ -247,6 +251,16 @@ def install_routes(app, config, db_session, employer, job_view):
     @router.get('/jobs/{job_id}', response_model=JobInfo)
     def get_job(job_id: str, identity=Depends(require('jobs:read')), db=Depends(db_session)):
         return job_payload(db, owned_job(db, job_id, identity[1]))
+
+    @router.get('/jobs/by-external/{source}/{external_id}', response_model=JobInfo)
+    def get_external_job(source: str = Path(pattern=r'^[a-zA-Z0-9_-]{1,40}$'),
+                         external_id: str = Path(pattern=r'^[a-zA-Z0-9_.-]{1,120}$'),
+                         identity=Depends(require('jobs:read')), db=Depends(db_session)):
+        mapping = db.scalar(select(ExternalJob).where(ExternalJob.owner_id == identity[1].id,
+                            ExternalJob.source == source, ExternalJob.external_id == external_id))
+        if not mapping:
+            raise HTTPException(404, 'Вакансия не найдена')
+        return job_payload(db, owned_job(db, mapping.job_id, identity[1]))
 
     @router.put('/jobs/by-external/{source}/{external_id}', response_model=JobInfo)
     def put_job(body: JobPut, source: str = Path(pattern=r'^[a-zA-Z0-9_-]{1,40}$'),
@@ -283,10 +297,26 @@ def install_routes(app, config, db_session, employer, job_view):
     @router.get('/applications', response_model=Page[AppSummary | Tombstone])
     def list_applications(job_id: str | None = None,
                           status: Literal['clarifying', 'ready', 'invited', 'confirmed', 'withdrawn'] | None = None,
+                          review_stage: ReviewStage | None = None,
+                          created_from: datetime | None = None, created_before: datetime | None = None,
                           after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'),
                           limit: int = Query(50, ge=1, le=100),
                           identity=Depends(require('applications:read')), db=Depends(db_session)):
         query = select(Application).join(Job).where(Job.owner_id == identity[1].id)
+        for value in (created_from, created_before):
+            if value is not None and value.utcoffset() is None:
+                raise HTTPException(422, 'Укажите часовой пояс даты: Z или +03:00')
+        if created_from and created_before and created_from >= created_before:
+            raise HTTPException(422, 'created_from должен быть раньше created_before')
+        if created_from:
+            query = query.where(Application.created_at >= created_from.astimezone(timezone.utc))
+        if created_before:
+            query = query.where(Application.created_at < created_before.astimezone(timezone.utc))
+        if review_stage:
+            if 'applications:pii' not in identity[0].scopes:
+                raise HTTPException(403, 'Фильтрация HR-этапов требует applications:pii')
+            query = query.outerjoin(ApplicationReview).where(Application.status != 'withdrawn',
+                     func.coalesce(ApplicationReview.stage, 'new') == review_stage)
         if job_id:
             owned_job(db, job_id, identity[1])
             query = query.where(Application.job_id == job_id)
@@ -337,6 +367,5 @@ def install_routes(app, config, db_session, employer, job_view):
                 'applications': sum(n for status, n in counts.items() if status != 'withdrawn'), 'statuses': counts,
                 'notice': 'Фактические статусы, не рейтинг кандидатов'}
 
-    from .talent_api import install_talent_routes
     install_talent_routes(router, require, db_session, owned_application)
     app.include_router(router)

@@ -154,7 +154,7 @@ def handle_update(db, event, config):
         return
     known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers'}
     known_commands.update({'/tests', '/test-template', '/newtest', '/archive-test', '/job-test', '/use-test', '/test-answers'})
-    known_commands.update({'/import-preview', '/import-confirm'})
+    known_commands.update({'/import-preview', '/import-confirm', '/import-edit', '/import-add'})
     if command.startswith('/') and command not in known_commands:
         reply('Команда не распознана. Откройте меню или продолжите текущий шаг обычным сообщением.')
         return
@@ -173,6 +173,8 @@ def handle_update(db, event, config):
             if existing:
                 reply('Отклик уже сохранён. Откройте его, чтобы продолжить.', [('Мой отклик', '/application ' + existing.id)])
             else:
+                from .imports import cancel_import
+                cancel_import(db, session)
                 session.state = {'step': 'consent', 'job_id': job.id}
                 reply(f'{job.title} · {job.company}\n{job.terms}\n\n{job.description[:1500]}\n\nРаботодатель получит ваше имя, опыт и ответы для рассмотрения отклика. Автоматического решения о найме нет. Для теста используйте вымышленные сведения.', [('Согласен, продолжить', 'Согласен'), ('Обработка данных', '/privacy'), ('Отмена', '/cancel')], bind=True)
     elif command == '/status':
@@ -261,7 +263,11 @@ def handle_update(db, event, config):
                     session.state = {}
                     reply('Отклик сохранён и доступен работодателю.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
     elif state.get('step') in ('import_waiting', 'import_ready'):
-        reply('Дождитесь результата и проверьте текст. Чтобы вставить свой текст, отмените импорт и снова откройте вакансию.', [('Отмена', '/cancel')])
+        if state.get('step') == 'import_ready':
+            reply('Проверьте текст, дополните или замените его, затем подтвердите отправку.',
+                  [('Открыть черновик', '/import-preview ' + state['import_id']), ('Отмена', '/cancel')], bind=True)
+        else:
+            reply('Дождитесь результата импорта. Отклик ещё не отправлен.', [('Отмена', '/cancel')])
     elif state.get('step') == 'answer':
         app = db.get(Application, state.get('application_id'))
         if not app or app.status != 'clarifying':
