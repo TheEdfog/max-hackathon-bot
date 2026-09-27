@@ -1,12 +1,13 @@
 from fastapi import HTTPException
 from sqlalchemy import select
-from .db import Application, Audit, Job, Outbox, User
+from .db import Application, Audit, BotSession, Job, Outbox, User
+from .chat_ui import queue_message
 from .matching import evidence, questions
 
 
-def notify(db, user, text):
+def notify(db, user, text, application_id=None, buttons=None):
     if user.max_id and not user.demo:
-        db.add(Outbox(max_id=user.max_id, body={"text": text}))
+        queue_message(db, user, text, buttons, application_id)
 
 
 def owned_job(db, job_id, user):
@@ -41,7 +42,7 @@ def submit(db, user, job, resume):
     db.add(app)
     db.flush()
     db.add(Audit(application_id=app.id, action="applied"))
-    notify(db, db.get(User, job.owner_id), f"Новый отклик на «{job.title}». Откройте РезюмИТ Найм, чтобы посмотреть кандидата.")
+    notify(db, db.get(User, job.owner_id), f"Новый отклик на «{job.title}». Кандидат заполняет сведения." if app.questions else f"Новый отклик на «{job.title}» готов к просмотру.", app.id, [('Открыть отклик', '/view ' + app.id)])
     return app
 
 
@@ -58,7 +59,7 @@ def answer(db, app, answers):
     if all(app.answers.get(key) for key in allowed):
         app.status = "ready"
         job = db.get(Job, app.job_id)
-        notify(db, db.get(User, job.owner_id), f"Кандидат ответил на уточнения по вакансии «{job.title}». Отклик готов к рассмотрению.")
+        notify(db, db.get(User, job.owner_id), f"Кандидат ответил на уточнения по вакансии «{job.title}». Отклик готов к рассмотрению.", app.id, [('Открыть отклик', '/view ' + app.id)])
     return app
 
 
@@ -70,7 +71,7 @@ def invite(db, app, message):
     app.status, app.invitation = "invited", message
     db.add(Audit(application_id=app.id, action="invited"))
     job = db.get(Job, app.job_id)
-    notify(db, db.get(User, app.user_id), f"Вас приглашают обсудить вакансию «{job.title}» в {job.company}.\n\n{message}\n\nДля подтверждения отправьте: /confirm {app.id}")
+    notify(db, db.get(User, app.user_id), f"Вас приглашают обсудить вакансию «{job.title}» в {job.company}.\n\n{message}", app.id, [('Подтвердить интерес', '/confirm ' + app.id), ('Мои отклики', '/status')])
     return app
 
 
@@ -82,5 +83,27 @@ def confirm(db, app):
     app.status = "confirmed"
     db.add(Audit(application_id=app.id, action="confirmed"))
     job = db.get(Job, app.job_id)
-    notify(db, db.get(User, job.owner_id), f"Кандидат подтвердил интерес к интервью по вакансии «{job.title}».")
+    notify(db, db.get(User, job.owner_id), f"Кандидат подтвердил интерес к интервью по вакансии «{job.title}».", app.id, [('Открыть отклик', '/view ' + app.id)])
+    return app
+
+
+def withdraw_application(db, app):
+    """Shared API/bot operation. Caller owns app and holds serialized write transaction."""
+    if app.status == 'withdrawn':
+        return app
+    owner = db.get(User, db.get(Job, app.job_id).owner_id)
+    candidate = db.get(User, app.user_id)
+    recipients = [u.max_id for u in (owner, candidate) if u.max_id]
+    for row in db.scalars(select(Outbox).where(
+            (Outbox.application_id == app.id) |
+            # Pre-v2 messages have no association: conservatively clear legacy recipient copies.
+            ((Outbox.application_id.is_(None)) & Outbox.max_id.in_(recipients)))):
+        row.body = {}
+        if row.status in ('pending', 'failed'):
+            row.status = 'cancelled'
+    session = db.get(BotSession, candidate.id)
+    if session and session.state.get('application_id') == app.id:
+        session.state = {}
+    app.resume, app.answers, app.questions, app.invitation, app.status = '', {}, [], '', 'withdrawn'
+    db.add(Audit(application_id=app.id, action='withdrawn'))
     return app

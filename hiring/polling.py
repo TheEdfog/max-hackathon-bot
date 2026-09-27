@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from sqlalchemy import String
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .config import Config
@@ -60,7 +61,7 @@ def main():
                 with factory() as db:
                     cursor = db.get(PollCursor, str(bot["user_id"]))
                     marker = cursor.marker if cursor else None
-                params = {"timeout": 25, "limit": 50, "types": "bot_started,message_created"}
+                params = {"timeout": 25, "limit": 50, "types": "bot_started,message_created,message_callback"}
                 if marker is not None:
                     params["marker"] = marker
                 try:
@@ -77,7 +78,7 @@ def main():
                             db.commit()
                     if payload.get("updates"):
                         print(f"Processed {len(payload['updates'])} update(s)", flush=True)
-                except (httpx.HTTPError, ValueError):
+                except (httpx.HTTPError, ValueError, SQLAlchemyError):
                     print("MAX temporarily unavailable; retrying in 5 seconds", flush=True)
                     time.sleep(5)
         except KeyboardInterrupt:

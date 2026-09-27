@@ -10,8 +10,19 @@ jobs:
           python-version: '3.13'
           cache: pip
           cache-dependency-path: requirements-hiring.lock
-      - run: pip install -r requirements-hiring.lock
-      - run: pip install -r requirements-data-api.lock
+      - run: pip install -r requirements-hiring-test.lock
+      - run: pip check
       - run: python tools/data_api/validate_data_api.py DATA-API.yaml
       - run: python -m pytest hiring_tests -q
-      - run: docker build -f Dockerfile.hiring -t rezumit-hiring:test .
+      - run: docker build -t rezumit-hiring:test .
+        timeout-minutes: 5
+      - name: Container start and restart smoke
+        shell: bash
+        run: |
+          docker run -d --name hiring-smoke -e HIRING_DEMO=false -e HIRING_EMPLOYER_CODE=synthetic-ci-code -e HIRING_SECRET=synthetic-ci-secret-not-for-deployment-123 -v hiring-smoke-data:/app/data rezumit-hiring:test
+          docker exec hiring-smoke python scripts/smoke_hiring.py --wait
+          docker restart hiring-smoke
+          docker exec hiring-smoke python scripts/smoke_hiring.py --wait --verify-existing
+      - name: Clean smoke container
+        if: always()
+        run: docker rm -f hiring-smoke || true

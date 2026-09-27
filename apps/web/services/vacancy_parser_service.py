@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import re
 
-from apps.web.services.llm_service import LlmServiceError, extract_requirements_with_llm
-from core.config import settings
 from core.utils import normalize_skill
 
 
@@ -910,6 +908,9 @@ def _build_role_context(raw_text: str, vacancy_title: str | None = None) -> str:
 
 
 def extract_vacancy_requirements(raw_text: str, *, vacancy_title: str | None = None) -> list[dict]:
+    # Legacy web-only integration. The MAX bot imports only the local parser above.
+    from apps.web.services.llm_service import LlmServiceError, extract_requirements_with_llm
+    from core.config import settings
     role_context = _build_role_context(raw_text, vacancy_title)
     hh_key_skills = _extract_hh_key_skill_requirements(raw_text)
 

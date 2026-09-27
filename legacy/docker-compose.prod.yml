@@ -1,3 +1,4 @@
+# Historical deployment reference; not a supported launch path for the MAX bot.
 name: rezumit-prod
 
 services:

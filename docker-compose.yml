@@ -1,39 +1,27 @@
-name: rezumit
-
+name: rezumit-hiring
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: rezumit_postgres
-    restart: unless-stopped
+  api:
+    build: .
+    env_file: .env.hiring
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-cvservice_db}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-MyNewStrongPassword123!}
+      HIRING_DATABASE_URL: sqlite:////app/data/hiring.db
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - rezumit_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    container_name: rezumit_redis
+      - hiring-data:/app/data
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - rezumit_redis_data:/data
+    init: true
+    stop_grace_period: 25s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 20s
       timeout: 5s
-      retries: 10
-
+      retries: 3
+      start_period: 20s
 volumes:
-  rezumit_postgres_data:
-  rezumit_redis_data:
+  hiring-data:

@@ -11,16 +11,17 @@ import jwt
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import func, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .bot import process_event, start_worker
 from .config import Config
-from .db import Application, Audit, Job, Outbox, User, connect
+from .db import Application, Audit, Job, Outbox, User, connect, serialize_writes
 from .matching import extract
 from .security import check_password, hash_password, max_identity, token_for
-from .services import answer, application_view, confirm, invite, owned_job, submit
+from .services import answer, application_view, confirm, invite, owned_job, submit, withdraw_application
 
 ROOT = Path(__file__).resolve().parent
 
@@ -104,9 +105,14 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.1.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
+
+    @app.exception_handler(SQLAlchemyError)
+    async def database_error(request, exc):
+        # SQL exceptions can contain parameters, including private texts. Never echo them.
+        return JSONResponse({'detail': 'Хранилище временно недоступно. Повторите действие.'}, 503)
 
     @app.middleware("http")
     async def guards(request, call_next):
@@ -116,6 +122,15 @@ def create_app(config=None):
             return JSONResponse({"detail": "Некорректный размер запроса"}, 400)
         if length > 6 * 1024 * 1024:
             return JSONResponse({"detail": "Максимальный размер файла — 5 МБ"}, 413)
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            limit = 128 * 1024 if request.url.path == '/api/max/webhook' else 6 * 1024 * 1024
+            chunks, received = [], 0
+            async for chunk in request.stream():
+                received += len(chunk)
+                if received > limit:
+                    return JSONResponse({'detail': 'Слишком большой запрос'}, 413)
+                chunks.append(chunk)
+            request._body = b''.join(chunks)  # Starlette cached request reused by call_next.
         if request.url.path.startswith("/api/auth"):
             key = request.client.host if request.client else "unknown"
             if len(buckets) > 10000:
@@ -137,7 +152,9 @@ def create_app(config=None):
         with factory() as db:
             yield db
 
-    def current(request: Request, db=Depends(db_session)):
+    bearer = HTTPBearer(auto_error=False)
+
+    def current(request: Request, credentials=Depends(bearer), db=Depends(db_session)):
         try:
             raw = request.headers.get("authorization", "")
             if not raw.startswith("Bearer "):
@@ -171,7 +188,7 @@ def create_app(config=None):
     @app.get("/health")
     def health(db=Depends(db_session)):
         db.execute(text("SELECT 1"))
-        return {"status": "ok", "version": "1.0.0"}
+        return {"status": "ok", "version": "1.1.0"}
 
     @app.get("/api/config")
     def public_config():
@@ -179,7 +196,7 @@ def create_app(config=None):
 
     @app.post("/api/auth/register", status_code=201)
     def register(body: Registration, db=Depends(db_session)):
-        if body.role == "employer" and config.employer_code and not hmac.compare_digest(body.code, config.employer_code):
+        if body.role == "employer" and config.employer_code and not hmac.compare_digest(body.code.encode(), config.employer_code.encode()):
             raise HTTPException(403, "Нужен код доступа работодателя")
         if body.role == "employer" and not body.company.strip():
             raise HTTPException(422, "Укажите название компании")
@@ -357,9 +374,9 @@ def create_app(config=None):
 
     @app.delete("/api/applications/{app_id}", status_code=204)
     def withdraw(app_id: str, user=Depends(current), db=Depends(db_session)):
+        serialize_writes(db)
         row = own_application(db, app_id, user)
-        row.resume, row.answers, row.questions, row.invitation, row.status = "", {}, [], "", "withdrawn"
-        db.add(Audit(application_id=row.id, action="withdrawn"))
+        withdraw_application(db, row)
         db.commit()
         return Response(status_code=204)
 

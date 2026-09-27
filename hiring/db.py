@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -84,6 +84,25 @@ class Outbox(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    application_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    callback_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+
+class BotAction(Base):
+    __tablename__ = 'hiring_bot_actions'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    command: Mapped[str] = mapped_column(String(200))
+    expected_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class BotAttempt(Base):
+    __tablename__ = 'hiring_bot_attempts'
+    user_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
 
 
 def connect(url):
@@ -95,4 +114,16 @@ def connect(url):
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA journal_mode=WAL")
     Base.metadata.create_all(engine)
+    # Additive v1 -> v2 migration. Startup is single-process; existing data is kept.
+    columns = {c['name'] for c in inspect(engine).get_columns('hiring_outbox')}
+    with engine.begin() as connection:
+        for name, size in (('application_id', 32), ('callback_id', 256)):
+            if name not in columns:
+                connection.execute(text(f'ALTER TABLE hiring_outbox ADD COLUMN {name} VARCHAR({size})'))
     return engine, sessionmaker(engine, expire_on_commit=False)
+
+
+def serialize_writes(db):
+    """Serialize event/withdraw/send on SQLite, including cross-process startup mistakes."""
+    if db.bind.dialect.name == 'sqlite':
+        db.execute(text('BEGIN IMMEDIATE'))

@@ -1,132 +1,165 @@
-"""MAX event processing and durable outbound messages; single worker per deployment."""
+"""MAX private-dialog logic; no network calls in the event transaction."""
 import hashlib
 import json
-import threading
-from datetime import timedelta
-import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from .db import Application, BotEvent, BotSession, Job, Outbox, User, now
-from .services import answer, confirm, submit
+from .chat_ui import PAGE_SIZE, consume_action, page_number, queue_message
+from .db import Application, BotEvent, BotSession, Job, Outbox, User, serialize_writes
 from .employer_bot import handle_employer
-from .max_client import tls_context
+from .outbox import start_worker
+from .services import answer, confirm, submit, withdraw_application
+
+STATUS = {'clarifying': 'ждём уточнений', 'ready': 'у работодателя', 'invited': 'приглашение',
+          'confirmed': 'интерес подтверждён', 'withdrawn': 'отозван'}
+
+
+def valid_event(event):
+    if not isinstance(event, dict) or event.get('update_type') not in ('bot_started', 'message_created', 'message_callback'):
+        return None
+    kind = event['update_type']
+    msg, callback = event.get('message') or {}, event.get('callback') or {}
+    if not isinstance(msg, dict) or not isinstance(callback, dict):
+        return None
+    body, recipient = msg.get('body', {}), msg.get('recipient') or {}
+    if not isinstance(body, dict) or not isinstance(recipient, dict) or recipient.get('chat_type', 'dialog') != 'dialog':
+        return None
+    identity = event.get('user') if kind == 'bot_started' else (callback.get('user') if kind == 'message_callback' else msg.get('sender'))
+    if not isinstance(identity, dict) or identity.get('is_bot'):
+        return None
+    uid = identity.get('user_id', identity.get('id'))
+    if not isinstance(uid, int) or isinstance(uid, bool) or not 0 < uid < 2**63:
+        return None
+    content = body.get('text') or ''
+    if not isinstance(content, str) or len(content) > 20000:
+        return None
+    key = (body.get('mid') if kind == 'message_created' else callback.get('callback_id')) if kind != 'bot_started' else json.dumps([event.get('timestamp'), event.get('payload')], ensure_ascii=False)
+    if not isinstance(key, str) or not 1 <= len(key) <= 256:
+        return None
+    digest = hashlib.sha256(f'{kind}:{uid}:{key}'.encode()).hexdigest()
+    return kind, identity, str(uid), content.strip(), callback, digest
 
 
 def handle_update(db, event, config):
-    kind = event.get("update_type")
-    if kind not in ("bot_started", "message_created"):
+    parsed = valid_event(event)
+    if not parsed:
         return
-    msg = event.get("message") or {}
-    if not isinstance(msg, dict) or not isinstance(msg.get("body", {}), dict):
-        return
-    if kind == "message_created" and (msg.get("recipient") or {}).get("chat_type", "dialog") != "dialog":
-        return  # Never collect applications or disclose candidate data in group chats.
-    identity = event.get("user") if kind == "bot_started" else msg.get("sender")
-    if not isinstance(identity, dict) or identity.get("is_bot"):
-        return
-    max_id = identity.get("user_id", identity.get("id"))
-    if not isinstance(max_id, int) or isinstance(max_id, bool) or max_id <= 0:
-        return
-    event_key = ("message:" + str(msg["body"]["mid"])) if msg.get("body", {}).get("mid") else json.dumps(event, sort_keys=True, ensure_ascii=False)
-    digest = hashlib.sha256(event_key.encode()).hexdigest()
+    kind, identity, max_id, text, callback, digest = parsed
     if db.get(BotEvent, digest):
         return
     db.add(BotEvent(id=digest))
     db.flush()
-    user = db.scalar(select(User).where(User.max_id == str(max_id)))
+    user = db.scalar(select(User).where(User.max_id == max_id))
     if not user:
-        user = User(max_id=str(max_id), name=str(identity.get("name") or identity.get("first_name") or "Кандидат")[:160], role="candidate")
+        name = identity.get('name') or identity.get('first_name') or 'Кандидат'
+        user = User(max_id=max_id, name=name[:160] if isinstance(name, str) else 'Кандидат', role='candidate')
         db.add(user)
         db.flush()
     session = db.get(BotSession, user.id)
     if not session:
         session = BotSession(user_id=user.id, state={})
         db.add(session)
+
+    def reply(value, buttons=None, application_id=None, bind=False):
+        queue_message(db, user, value, buttons or [('Меню', '/help'), ('Отмена', '/cancel')],
+                      application_id, dict(session.state) if bind else None)
+
+    if kind == 'message_callback':
+        db.add(Outbox(max_id=max_id, callback_id=callback['callback_id'], body={}))
+        text = consume_action(db, user, session, callback.get('payload'))
+        if text is None:
+            reply('Кнопка устарела или уже использована. Откройте меню и повторите действие.')
+            return
     state = dict(session.state)
-    text = str(msg.get("body", {}).get("text") or "").strip()
-
-    def reply(value, link=None):
-        body = {"text": value[:3900]}
-        if link:
-            body["attachments"] = [{"type": "inline_keyboard", "payload": {"buttons": [[{"type": "link", "text": "Открыть РезюмИТ Найм", "url": link}]]}}]
-        db.add(Outbox(max_id=str(max_id), body=body))
-
-    if text == "/cancel":
+    command = text.split(maxsplit=1)[0] if text else ''
+    if command == '/cancel':
         session.state = {}
-        reply("Текущий шаг отменён. /help — меню. Сохранённые вакансии и отклики не изменились.")
+        reply('Текущий шаг отменён. Сохранённые вакансии и отклики не изменились.')
         return
-    if text in ("/privacy", "/help", "/start") or kind == "bot_started" and not event.get("payload"):
-        if text == "/privacy":
-            reply("Откликаясь, вы передаёте имя, MAX ID, текст опыта и ответы компании из вакансии для рассмотрения отклика. Тексты хранятся на сервере бота; во внешнюю языковую модель не передаются. Решение о найме принимает работодатель. Не отправляйте паспорт, здоровье и другие чувствительные сведения. Для отзыва: /withdraw ID_ОТКЛИКА (ID виден в /status). Сейчас это тестовая версия: используйте вымышленные данные.")
+    if text in ('/privacy', '/help', '/start') or kind == 'bot_started' and not event.get('payload'):
+        if text == '/privacy':
+            reply('Тестовая версия: используйте вымышленные данные. Компания из вакансии увидит имя, опыт и ответы. MAX ID нужен для уведомлений. Сведения хранятся на сервере бота, во внешнюю языковую модель не передаются. Решение принимает человек. Не присылайте паспорт и чувствительные сведения. Отзыв через «Мои отклики» очищает тексты в базе откликов и серверной очереди. Уже доставленные сообщения MAX и резервные копии этим не удаляются. Сроки и очистка тестового стенда описаны в регламенте проекта.', [('Мои отклики', '/status'), ('Меню', '/help')])
+        elif user.role == 'employer':
+            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         else:
-            reply("РезюмИТ Найм · помощник первичного отбора\n\nРаботодателю: /employer КОД, затем /newjob и /jobs.\nКандидату: откройте ссылку вакансии, которую прислал работодатель.\n/status — ваши отклики\n/privacy — обработка данных\n/cancel — отменить текущий шаг\n\nВсё работает в этом чате. Тестовая версия: используйте вымышленные резюме.")
+            reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия — используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         return
     if handle_employer(db, user, session, text, config, reply):
         return
-
-    payload = str(event.get("payload") or "") if kind == "bot_started" else (text.split(" ", 1)[1] if text.startswith("/start ") else "")
-    if payload.startswith("apply_"):
+    payload = event.get('payload') if kind == 'bot_started' else (text.partition(' ')[2] if command == '/start' else '')
+    if isinstance(payload, str) and payload.startswith('apply_'):
         job = db.get(Job, payload[6:])
         if not job or not job.active:
-            reply("Эта вакансия недоступна. Попросите работодателя прислать актуальную ссылку.")
-        elif user.role != "candidate":
-            reply("Вы вошли как работодатель. Для проверки отклика используйте отдельный аккаунт кандидата.")
+            reply('Эта вакансия недоступна. Попросите работодателя прислать актуальную ссылку.')
         else:
-            session.state = {"step": "consent", "job_id": job.id}
-            reply(f"{job.title} · {job.company}\n{job.terms}\n\n{job.description[:1500]}\n\nОтклик, имя и ваши ответы увидит работодатель {job.company}. Автоматического решения о найме нет. Это тестовая версия — используйте вымышленные данные.\n\nОтправьте «Согласен», если согласны передать ему данные для рассмотрения отклика. Подробнее: /privacy\nДля отмены: /cancel")
-    elif text == "/cancel":
-        session.state = {}
-        reply("Диалог отменён. Уже отправленные отклики доступны в личном кабинете.")
-    elif text.startswith("/confirm "):
-        app = db.get(Application, text.split(" ", 1)[1].strip())
+            existing = db.scalar(select(Application).where(Application.user_id == user.id, Application.job_id == job.id))
+            if existing:
+                reply('Отклик уже сохранён. Откройте его, чтобы продолжить.', [('Мой отклик', '/application ' + existing.id)])
+            else:
+                session.state = {'step': 'consent', 'job_id': job.id}
+                reply(f'{job.title} · {job.company}\n{job.terms}\n\n{job.description[:1500]}\n\nРаботодатель получит ваше имя, опыт и ответы для рассмотрения отклика. Автоматического решения о найме нет. Для теста используйте вымышленные сведения.', [('Согласен, продолжить', 'Согласен'), ('Обработка данных', '/privacy'), ('Отмена', '/cancel')], bind=True)
+    elif command == '/status':
+        page = page_number(text.partition(' ')[2])
+        apps = list(db.scalars(select(Application).where(Application.user_id == user.id).order_by(Application.created_at.desc(), Application.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
+        buttons = [(f'{db.get(Job, a.job_id).title} · {STATUS[a.status]}', '/application ' + a.id) for a in apps[:PAGE_SIZE]]
+        if page:
+            buttons.append(('← Назад', f'/status {page - 1}'))
+        if len(apps) > PAGE_SIZE:
+            buttons.append(('Далее →', f'/status {page + 1}'))
+        reply(f'Мои отклики · страница {page + 1}' if apps else 'Откликов здесь пока нет. Откройте ссылку вакансии.', buttons + [('Меню', '/help')])
+    elif command in ('/application', '/confirm', '/withdraw', '/continue'):
+        app = db.get(Application, text.partition(' ')[2].strip())
         if not app or app.user_id != user.id:
-            reply("Отклик не найден.")
-        else:
+            reply('Отклик не найден.')
+            return
+        if command == '/withdraw':
+            if app.status == 'withdrawn':
+                reply('Отклик уже отозван.', [('Мои отклики', '/status')])
+                return
+            session.state = {'step': 'withdraw_confirm', 'application_id': app.id}
+            reply('Отозвать отклик и очистить резюме и ответы на сервере? Уже доставленные сообщения MAX останутся.', [('Отозвать', 'Отозвать'), ('Сохранить отклик', '/cancel')], application_id=app.id, bind=True)
+        elif command == '/confirm':
             try:
                 confirm(db, app)
-                reply("Интерес к интервью подтверждён. Работодатель получит уведомление.")
+                reply('Интерес подтверждён. Уведомление поставлено в очередь.', [('Мои отклики', '/status')], application_id=app.id)
             except HTTPException as exc:
                 reply(str(exc.detail))
-    elif text == "/status":
-        statuses = {"clarifying": "ждём ваших уточнений", "ready": "у работодателя", "invited": "приглашение на интервью", "confirmed": "интерес подтверждён", "withdrawn": "отозван"}
-        apps = list(db.scalars(select(Application).where(Application.user_id == user.id)))
-        for app in apps[:20]:
-            reply(f"{db.get(Job, app.job_id).title}: {statuses.get(app.status, app.status)}\nID: {app.id}\n" + (f"Приглашение: {app.invitation}\nПодтвердить: /confirm {app.id}\n" if app.status == "invited" else "") + f"Отозвать: /withdraw {app.id}")
-        if not apps:
-            reply("Пока нет откликов. Перейдите по ссылке вакансии от работодателя.")
-    elif text.startswith("/withdraw "):
-        app = db.get(Application, text.split(" ", 1)[1].strip())
-        if not app or app.user_id != user.id:
-            reply("Отклик не найден.")
+        elif command == '/continue' and app.status == 'clarifying':
+            pending = [q for q in app.questions if not app.answers.get(q['id'])]
+            if pending:
+                session.state = {'step': 'answer', 'application_id': app.id}
+                reply(pending[0]['text'], application_id=app.id)
         else:
-            session.state = {"step": "withdraw_confirm", "application_id": app.id}
-            reply("Чтобы отозвать отклик и удалить из него резюме и ответы, напишите «Отозвать». /cancel — сохранить отклик.")
-    elif state.get("step") == "withdraw_confirm":
-        if text.lower() != "отозвать":
-            reply("Напишите «Отозвать» или /cancel.")
+            buttons = []
+            if app.status == 'clarifying':
+                buttons.append(('Продолжить уточнения', '/continue ' + app.id))
+            if app.status == 'invited':
+                buttons.append(('Подтвердить интерес', '/confirm ' + app.id))
+            if app.status != 'withdrawn':
+                buttons.append(('Отозвать отклик', '/withdraw ' + app.id))
+            reply(f"{db.get(Job, app.job_id).title}\n{STATUS[app.status]}\n{app.invitation}", buttons + [('Мои отклики', '/status')], application_id=app.id)
+    elif state.get('step') == 'withdraw_confirm':
+        if text.lower() != 'отозвать':
+            reply('Выберите «Отозвать» или отмените действие.')
         else:
-            from .db import Audit
-            app = db.get(Application, state["application_id"])
+            app = db.get(Application, state['application_id'])
             if app and app.user_id == user.id:
-                app.resume, app.answers, app.questions, app.invitation, app.status = "", {}, [], "", "withdrawn"
-                db.add(Audit(application_id=app.id, action="withdrawn"))
+                withdraw_application(db, app)
             session.state = {}
-            reply("Отклик отозван. Резюме и ответы удалены из базы откликов. Уже доставленные сообщения в MAX этим действием не удаляются.")
-    elif state.get("step") == "consent":
-        if text.lower() not in ("согласен", "согласна", "да"):
-            reply("Для отклика нужно согласие. Отправьте «Согласен» или /cancel.")
+            reply('Отклик отозван. Тексты очищены из базы откликов и очереди; ожидающие отправки отменены. Уже доставленные сообщения MAX и резервные копии этим не удаляются.', [('Мои отклики', '/status')])
+    elif state.get('step') == 'consent':
+        if text.lower() not in ('согласен', 'согласна', 'да'):
+            reply('Для отправки отклика нужно согласие.', [('Согласен, продолжить', 'Согласен'), ('Отмена', '/cancel')], bind=True)
         else:
-            session.state = {**state, "step": "resume"}
-            reply("Пришлите текст резюме или коротко опишите опыт, проекты и навыки одним сообщением (от 40 символов). Не включайте паспортные данные. PDF можно загрузить в мини-приложении.")
-    elif state.get("step") == "resume":
-        if not 40 <= len(text) <= 20000:
-            reply("Пришлите текст от 40 до 20 000 символов. Если отправили файл, скопируйте из него текст или откройте мини-приложение.")
+            session.state = {**state, 'step': 'resume'}
+            reply('Пришлите текст резюме или опишите опыт и проекты одним сообщением: 40–20 000 символов. Файлы и сканы пока не принимаются — скопируйте текст из документа. Не включайте паспортные данные.')
+    elif state.get('step') == 'resume':
+        if not 40 <= len(text) <= 20000 or text.startswith('/'):
+            reply('Нужен текст от 40 до 20 000 символов. Если отправили файл, скопируйте из него текст.')
         else:
-            job = db.get(Job, state["job_id"])
+            job = db.get(Job, state['job_id'])
             if not job or not job.active:
                 session.state = {}
-                reply("Приём откликов завершён.")
+                reply('Приём откликов завершён.')
             else:
                 try:
                     app = submit(db, user, job, text)
@@ -134,67 +167,39 @@ def handle_update(db, event, config):
                     session.state = {}
                     reply(str(exc.detail))
                     return
-                pending = [q for q in app.questions if not app.answers.get(q["id"])]
-                if pending and app.status == "clarifying":
-                    session.state = {"step": "answer", "application_id": app.id}
-                    reply("Отклик сохранён. Уточним несколько деталей.\n\n" + pending[0]["text"])
+                pending = [q for q in app.questions if not app.answers.get(q['id'])]
+                if pending and app.status == 'clarifying':
+                    session.state = {'step': 'answer', 'application_id': app.id}
+                    reply('Отклик сохранён. Уточним детали.\n\n' + pending[0]['text'], application_id=app.id)
                 else:
                     session.state = {}
-                    reply("Отклик уже сохранён и доступен работодателю. Проверить статус: /status")
-    elif state.get("step") == "answer":
-        app = db.get(Application, state.get("application_id"))
-        if not app or app.status != "clarifying":
+                    reply('Отклик сохранён и доступен работодателю.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
+    elif state.get('step') == 'answer':
+        app = db.get(Application, state.get('application_id'))
+        if not app or app.status != 'clarifying':
             session.state = {}
-            reply("Уточнения завершены. Проверить статус: /status")
-        elif not 2 <= len(text) <= 2500:
-            reply("Ответ должен содержать от 2 до 2500 символов. Если опыта нет, напишите «нет опыта».")
+            reply('Уточнения завершены.', [('Мои отклики', '/status')])
+        elif not 2 <= len(text) <= 2500 or text.startswith('/'):
+            reply('Ответ: 2–2500 символов. Если опыта нет, так и напишите.')
         else:
-            pending = [q for q in app.questions if not app.answers.get(q["id"])]
+            pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:
-                answer(db, app, {pending[0]["id"]: text})
-            pending = [q for q in app.questions if not app.answers.get(q["id"])]
+                answer(db, app, {pending[0]['id']: text})
+            pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:
-                reply(pending[0]["text"])
+                reply(pending[0]['text'], application_id=app.id)
             else:
                 session.state = {}
-                reply("Спасибо! Ответы сохранены, работодатель получил ваш отклик. Проверить статус: /status")
+                reply('Спасибо! Ответы сохранены, уведомление работодателю поставлено в очередь.', [('Мои отклики', '/status')], application_id=app.id)
     else:
-        reply("Откройте ссылку вакансии от работодателя, чтобы отправить отклик.\n\n/employer КОД — режим работодателя\n/status — ваши отклики\n/help — помощь")
+        reply('Откройте ссылку вакансии от работодателя или выберите действие в меню.')
 
 
 def process_event(factory, event, config):
+    if not valid_event(event):
+        return
     with factory() as db:
-        try:
-            handle_update(db, event, config)
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-
-
-def start_worker(factory, config):
-    stop = threading.Event()
-
-    def run():
-        while not stop.wait(0.7):
-            if not config.bot_token:
-                continue
-            try:
-                with factory() as db:
-                    row = db.scalar(select(Outbox).where(Outbox.status == "pending", Outbox.available_at <= now()).order_by(Outbox.available_at).limit(1))
-                    if not row:
-                        continue
-                    row.attempts += 1
-                    try:
-                        response = httpx.post(config.max_api_url + "/messages", params={"user_id": row.max_id}, headers={"Authorization": config.bot_token}, json=row.body, timeout=12, verify=tls_context(config.max_api_url))
-                        success = response.is_success
-                    except httpx.HTTPError:
-                        success = False
-                    row.status = "sent" if success else ("failed" if row.attempts >= 6 else "pending")
-                    row.available_at = now() + timedelta(seconds=min(300, 2 ** row.attempts))
-                    db.commit()
-            except Exception:
-                # Preserve the pending message for retry; never log its body or token.
-                stop.wait(2)
-    thread = threading.Thread(target=run, daemon=True, name="max-outbox")
-    thread.start()
-    return stop, thread
+        serialize_writes(db)
+        handle_update(db, event, config)
+        # Unexpected integrity/storage errors fail the webhook so MAX can retry.
+        db.commit()

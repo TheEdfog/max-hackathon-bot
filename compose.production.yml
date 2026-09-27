@@ -1,0 +1,22 @@
+# Future server: docker compose --env-file .env.hiring -f docker-compose.yml -f compose.production.yml up --build -d
+services:
+  api:
+    environment:
+      HIRING_ENV: production
+      HIRING_DEMO: "false"
+  proxy:
+    image: caddy:2.10.2-alpine
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?Set PUBLIC_HOST to the API domain without https}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+volumes:
+  caddy-data:
+  caddy-config:
