@@ -12,9 +12,49 @@ from hiring.config import Config
 from hiring.db import Application, BotAction, BotSession, Job, Outbox, SandboxSwitch, User, connect
 from hiring.main import create_app
 from hiring.outbox import deliver_one
+from hiring.polling import PollCursor, open_cursor_store, transport_url
+from hiring.runtime_lock import polling_lock
 from hiring.sandbox import check_storage
 from test_employer_bot import send
 from test_buttons_delivery import click
+
+
+def test_transport_marker_and_lock_shared_between_modes(tmp_path):
+    normal_url = 'sqlite:///' + str(tmp_path / 'hiring.db')
+    sandbox_url = 'sqlite:///' + str(tmp_path / 'hiring.sandbox.db')
+    shared = transport_url(normal_url)
+    assert shared == transport_url(sandbox_url)
+    with polling_lock(shared), pytest.raises(RuntimeError, match='already running'):
+        with polling_lock(transport_url(sandbox_url)):
+            pass
+    engines = []
+    try:
+        normal_engine, normal = connect(normal_url)
+        sandbox_engine, isolated = connect(sandbox_url)
+        engines.extend([normal_engine, sandbox_engine])
+        for factory, marker in ((normal, 'old-normal-marker'), (isolated, 'latest-sandbox-marker')):
+            with factory() as db:
+                db.add(PollCursor(id='42', marker=marker))
+                db.commit()
+        engine, transport = open_cursor_store(shared, isolated, '42')
+        engines.append(engine)
+        with transport() as db:
+            assert db.get(PollCursor, '42').marker == 'latest-sandbox-marker'
+            db.get(PollCursor, '42').marker = 'after-test-traffic'
+            db.commit()
+        # A normal-mode restart must not replay the sandbox's traffic.
+        engine, transport = open_cursor_store(shared, normal, '42')
+        engines.append(engine)
+        with transport() as db:
+            assert db.get(PollCursor, '42').marker == 'after-test-traffic'
+        with normal() as db:
+            assert db.get(PollCursor, '42').marker == 'old-normal-marker'
+            assert db.scalar(select(func.count()).select_from(User)) == 0
+        from sqlalchemy import inspect
+        assert inspect(engine).get_table_names() == ['hiring_poll_cursor']
+    finally:
+        for engine in engines:
+            engine.dispose()
 
 
 @pytest.fixture
