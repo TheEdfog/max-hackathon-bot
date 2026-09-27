@@ -43,21 +43,39 @@ def main():
                  'code': 'synthetic-ci-code' if role == 'employer' else ''}, expected=201)
         tokens[role] = call('POST', '/api/auth/login', {'email': email, 'password': 'synthetic-smoke-password'})['token']
     employer, candidate = tokens['employer'], tokens['candidate']
+    prefix = '/api/integrations/v1'
+    issued = call('POST', '/api/integration-keys', {'name': 'Synthetic smoke ATS',
+        'scopes': ['jobs:read', 'jobs:write', 'applications:read', 'events:read', 'invitations:write']}, employer, 201)
+    machine = issued['token']
     if args.verify_existing:
         rows = call('GET', '/api/applications', token=candidate)
         assert len(rows) == 1 and rows[0]['status'] == 'confirmed'
         assert rows[0]['resume'], 'Persistent volume did not retain the application'
-        print('Restart smoke: persistent confirmed application verified; no MAX sends.')
+        synced = call('GET', prefix + '/applications/' + rows[0]['id'], token=machine)
+        assert synced['status'] == 'confirmed' and 'resume' not in synced
+        assert call('GET', prefix + '/events', token=machine)['items']
+        call('DELETE', '/api/integration-keys/' + issued['id'], token=employer, expected=204)
+        call('GET', prefix + '/jobs', token=machine, expected=401)
+        print('Restart smoke: persistent application and HR feed verified; no MAX sends.')
         return
-    jid = call('POST', '/api/jobs', {'title': 'Synthetic smoke vacancy',
+    vacancy = {'title': 'Synthetic smoke vacancy',
         'description': 'Synthetic local verification vacancy. Python is required.',
-        'requirements': [{'id': 'python', 'skill': 'python', 'label': 'Python', 'type': 'must'}]}, employer, 201)['id']
+        'requirements': [{'id': 'python', 'skill': 'python', 'label': 'Python', 'type': 'must'}],
+        'screening_questions': ['screen_conditions']}
+    jid = call('PUT', prefix + '/jobs/by-external/smoke/REQ-1', vacancy, machine)['id']
+    assert call('PUT', prefix + '/jobs/by-external/smoke/REQ-1', vacancy, machine)['id'] == jid
     app = call('POST', f'/api/jobs/{jid}/apply', {'name': 'Synthetic candidate', 'resume': 'I used Python to build a synthetic catalog with automated tests.', 'consent': True}, candidate, 201)
     aid = app['id']
+    assert app['status'] == 'clarifying'
+    app = call('POST', f'/api/applications/{aid}/answers',
+               {'answers': {'screen_conditions': 'Synthetic conditions: discuss at interview.'}}, candidate)
     assert app['status'] == 'ready'
-    call('POST', f'/api/applications/{aid}/invite', {'message': 'Synthetic invitation for container smoke.'}, employer)
+    call('POST', prefix + f'/applications/{aid}/invite', {'message': 'Synthetic invitation for container smoke.'}, machine)
     assert call('POST', f'/api/applications/{aid}/confirm', token=candidate)['status'] == 'confirmed'
-    print('HTTP smoke: hiring cycle completed using synthetic, non-MAX accounts.')
+    assert call('GET', prefix + '/events', token=machine)['items']
+    call('DELETE', '/api/integration-keys/' + issued['id'], token=employer, expected=204)
+    call('GET', prefix + '/jobs', token=machine, expected=401)
+    print('HTTP smoke: HR upsert, screening, invitation, confirmation and revocation verified; no MAX sends.')
 
 
 if __name__ == '__main__':

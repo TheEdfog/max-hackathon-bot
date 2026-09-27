@@ -4,6 +4,7 @@ from .db import Application, Audit, BotSession, Job, Outbox, User
 from .chat_ui import queue_message
 from .matching import evidence, questions
 from .sandbox import destination
+from .screening import screening_questions
 
 
 def notify(db, user, text, application_id=None, buttons=None):
@@ -38,7 +39,8 @@ def submit(db, user, job, resume):
         if existing.status == "withdrawn":
             raise HTTPException(409, "Отклик был отозван. Для повторного отклика свяжитесь с работодателем.")
         return existing
-    app = Application(job_id=job.id, user_id=user.id, resume=resume, questions=questions(resume, job.requirements))
+    app = Application(job_id=job.id, user_id=user.id, resume=resume,
+                      questions=questions(resume, job.requirements) + screening_questions(job.screening_questions or []))
     app.status = "clarifying" if app.questions else "ready"
     db.add(app)
     db.flush()

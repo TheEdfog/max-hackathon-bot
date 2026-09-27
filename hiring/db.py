@@ -37,6 +37,7 @@ class Job(Base):
     description: Mapped[str] = mapped_column(Text)
     terms: Mapped[str] = mapped_column(String(500), default="")
     requirements: Mapped[list] = mapped_column(JSON)
+    screening_questions: Mapped[list] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -111,6 +112,38 @@ class SandboxSwitch(Base):
     persona: Mapped[str] = mapped_column(String(1), default='e')
 
 
+class IntegrationKey(Base):
+    __tablename__ = 'hiring_integration_keys'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    digest: Mapped[str] = mapped_column(String(64), unique=True)
+    scopes: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ExternalJob(Base):
+    __tablename__ = 'hiring_external_jobs'
+    __table_args__ = (UniqueConstraint('owner_id', 'source', 'external_id'),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey('hiring_jobs.id'), unique=True)
+    source: Mapped[str] = mapped_column(String(40))
+    external_id: Mapped[str] = mapped_column(String(120))
+
+
+class IntegrationEvent(Base):
+    __tablename__ = 'hiring_integration_events'
+    __table_args__ = {'sqlite_autoincrement': True}
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    resource_id: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 def connect(url):
     kwargs = {"connect_args": {"check_same_thread": False, "timeout": 20}} if url.startswith("sqlite") else {}
     engine = create_engine(url, **kwargs)
@@ -126,6 +159,10 @@ def connect(url):
         for name, size in (('application_id', 32), ('callback_id', 256)):
             if name not in columns:
                 connection.execute(text(f'ALTER TABLE hiring_outbox ADD COLUMN {name} VARCHAR({size})'))
+        if 'screening_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
+            connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN screening_questions JSON NOT NULL DEFAULT '[]'"))
+    from .integration_events import install_events
+    install_events()
     return engine, sessionmaker(engine, expire_on_commit=False)
 
 

@@ -48,12 +48,27 @@ class Requirement(BaseModel):
     type: Literal["must", "nice"] = "must"
     source: str = Field(default="", max_length=700)
 
+    @field_validator('id')
+    @classmethod
+    def reserved_ids(cls, value):
+        if value.startswith('screen_'):
+            raise ValueError('screen_ is reserved for optional interview questions')
+        return value
+
 
 class JobBody(BaseModel):
     title: str = Field(min_length=3, max_length=160)
     description: str = Field(min_length=30, max_length=20000)
     terms: str = Field(default="", max_length=500)
     requirements: list[Requirement] = Field(min_length=1, max_length=15)
+    screening_questions: list[Literal['screen_motivation', 'screen_conditions', 'screen_availability']] = Field(default_factory=list, max_length=3)
+
+    @field_validator('screening_questions')
+    @classmethod
+    def unique_screening(cls, value):
+        if len(set(value)) != len(value):
+            raise ValueError('Вопросы не должны повторяться')
+        return value
 
     @field_validator("requirements")
     @classmethod
@@ -75,7 +90,7 @@ class ApplicationBody(BaseModel):
 
 
 class AnswersBody(BaseModel):
-    answers: dict[str, str] = Field(max_length=3)
+    answers: dict[str, str] = Field(max_length=6)
 
     @field_validator("answers")
     @classmethod
@@ -111,7 +126,7 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.1.0", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.2.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
 
@@ -137,15 +152,16 @@ def create_app(config=None):
                     return JSONResponse({'detail': 'Слишком большой запрос'}, 413)
                 chunks.append(chunk)
             request._body = b''.join(chunks)  # Starlette cached request reused by call_next.
-        if request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer':
-            key = request.client.host if request.client else "unknown"
+        integration = request.url.path.startswith('/api/integrations/') or request.url.path.startswith('/api/integration-keys')
+        if request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer' or integration:
+            key = (request.client.host if request.client else "unknown", 'integration' if integration else 'auth')
             if len(buckets) > 10000:
                 buckets.clear()
             q = buckets[key]
             while q and q[0] < time.monotonic() - 60:
                 q.popleft()
-            if len(q) >= 30:
-                return JSONResponse({"detail": "Слишком много попыток. Попробуйте через минуту."}, 429)
+            if len(q) >= (120 if integration else 30):
+                return JSONResponse({"detail": "Слишком много попыток. Попробуйте через минуту."}, 429, headers={'Retry-After': '60'})
             q.append(time.monotonic())
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -187,14 +203,15 @@ def create_app(config=None):
     def job_view(db, job):
         count = db.scalar(select(func.count()).select_from(Application).where(Application.job_id == job.id, Application.status != "withdrawn"))
         return {"id": job.id, "title": job.title, "company": job.company, "description": job.description,
-                "terms": job.terms, "requirements": job.requirements, "active": job.active, "applications": count,
+                "terms": job.terms, "requirements": job.requirements, "screening_questions": job.screening_questions,
+                "active": job.active, "applications": count,
                 "created_at": job.created_at.isoformat(), "apply_url": config.public_url + "/apply/" + job.id,
                 "max_url": f"https://max.ru/{config.bot_name}?start=apply_{job.id}" if config.bot_name else None}
 
     @app.get("/health")
     def health(db=Depends(db_session)):
         db.execute(text("SELECT 1"))
-        return {"status": "ok", "version": "1.1.0"}
+        return {"status": "ok", "version": "1.2.0"}
 
     @app.get("/api/config")
     def public_config():
@@ -279,7 +296,8 @@ def create_app(config=None):
 
     @app.post("/api/jobs", status_code=201)
     def create_job(body: JobBody, user=Depends(employer), db=Depends(db_session)):
-        job = Job(owner_id=user.id, title=body.title, company=user.company, description=body.description, terms=body.terms, requirements=[r.model_dump() for r in body.requirements])
+        job = Job(owner_id=user.id, title=body.title, company=user.company, description=body.description, terms=body.terms,
+                  requirements=[r.model_dump() for r in body.requirements], screening_questions=body.screening_questions)
         db.add(job)
         db.commit()
         return job_view(db, job)
@@ -414,6 +432,8 @@ def create_app(config=None):
         user = seed(db)
         return auth_response(user)
 
+    from .integrations import install_routes
+    install_routes(app, config, db_session, employer, job_view)
     app.mount("/assets", StaticFiles(directory=str(ROOT / "static")), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)

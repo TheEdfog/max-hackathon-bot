@@ -7,6 +7,8 @@ NEGATION = re.compile(r"\b(?:нет|не\s+(?:работал\w*|использо
 UNCERTAIN = re.compile(r"\b(?:хочу|планир\w*|слышал\w*|возможно|не\s+уверен\w*|не\s+только|want\s+to|plan\s+to|maybe|not\s+only)\b", re.I)
 PREDICATE = re.compile(r"\b(?:работ\w*|использ\w*|изуч\w*|владе\w*|осво\w*|зна\w*|сделал\w*|написал\w*|создал\w*|разработал\w*|used?|know|worked?|built)\b", re.I)
 ALIASES = {"postgresql": ["postgresql", "postgres", "постгрес"], "javascript": ["javascript", "js"], "python": ["python", "питон", "питоне", "питоном"], "git": ["git", "гит"], "fastapi": ["fastapi", "fast api"], "docker": ["docker", "докер"], "sql": ["sql"]}
+ALIASES.update({'spark': ['spark', 'pyspark'], 'etl': ['etl', 'elt'],
+                'data quality': ['data quality', 'dq', 'качество данных', 'качества данных']})
 
 
 def clauses(text):

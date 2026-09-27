@@ -1,6 +1,7 @@
 # DATA-API 1.0, based on stasnorman/example-data-api (see docs/DATA-API.md).
 # DRAFT: replace api.baseUrl after HTTPS deployment. This URL is NOT live.
 # No credentials here. The evaluator supplies a Bearer JWT for each named role.
+# Integration checks issue a short-lived scoped key in memory and revoke it in cleanup.
 # Use dedicated synthetic employer/candidate/other_employer accounts without MAX links.
 schemaVersion: "1.0"
 solution:
@@ -341,9 +342,95 @@ checks:
     timeoutMs: 5000
     repeatable: true
 
+  - id: integration-key
+    name: Создание ограниченного ключа HR-интеграции
+    description: Одноразовый ключ извлекается только в память проверяющего и отзывается в cleanup.
+    method: POST
+    path: /api/integration-keys
+    role: employer
+    dependsOn: [employer-identity]
+    request:
+      headers: {Content-Type: application/json}
+      body:
+        name: DATA-API synthetic HR reader
+        scopes: [jobs:read, applications:read, events:read]
+        expires_in_days: 1
+    expected:
+      statusCodes: [201]
+      contentType: application/json
+      requiredFields: [id, token, scopes, expires_at]
+    extract:
+      integrationKeyId: $.id
+      integrationToken: $.token
+    timeoutMs: 5000
+    repeatable: false
+
+  - id: integration-job
+    name: Внешняя HR-система читает вакансию по своему ключу
+    method: GET
+    path: /api/integrations/v1/jobs/{job_id}
+    role: public
+    dependsOn: [integration-key, create-job]
+    request:
+      path: {job_id: "${jobId}"}
+      headers: {Authorization: "Bearer ${integrationToken}"}
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [id, title, applications, external_id]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: integration-least-privilege
+    name: Ключ чтения не может закрыть вакансию
+    method: PATCH
+    path: /api/integrations/v1/jobs/{job_id}
+    role: public
+    dependsOn: [integration-key, create-job]
+    request:
+      path: {job_id: "${jobId}"}
+      headers: {Authorization: "Bearer ${integrationToken}", Content-Type: application/json}
+      body: {active: false}
+    expected:
+      statusCodes: [403]
+      contentType: application/json
+      requiredFields: [detail]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: integration-events
+    name: Лента изменений HR-системы с курсором
+    method: GET
+    path: /api/integrations/v1/events
+    role: public
+    dependsOn: [integration-key, confirm]
+    request:
+      headers: {Authorization: "Bearer ${integrationToken}"}
+      query: {after: "0", limit: 100}
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [items, next_cursor, has_more]
+      bodySchema:
+        type: object
+        required: [items]
+        properties:
+          items: {type: array, minItems: 1}
+    timeoutMs: 5000
+    repeatable: true
+
 # Run cleanup even if a later check fails, provided the relevant ID was extracted.
 # Current API erases resume/answers and closes the vacancy; technical records remain.
 cleanup:
+  - id: revoke-integration-key
+    method: DELETE
+    path: /api/integration-keys/{key_id}
+    role: employer
+    request:
+      path: {key_id: "${integrationKeyId}"}
+    expected:
+      statusCodes: [204, 404]
+    timeoutMs: 5000
   - id: withdraw-test-application
     method: DELETE
     path: /api/applications/{app_id}

@@ -7,6 +7,7 @@ from .db import Application, BotAttempt, Job, User, now
 from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract
 from .services import invite, owned_job
+from .screening import PRESETS
 
 STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "withdrawn": "отозван"}
 EVIDENCE = {"mentioned": "указано в резюме", "answered": "уточнено в ответе", "negative": "сообщил об отсутствии опыта", "conflict": "противоречие", "review": "нужно прочитать ответ", "unknown": "нет сведений"}
@@ -14,6 +15,10 @@ EVIDENCE = {"mentioned": "указано в резюме", "answered": "уточ
 
 def requirement_summary(requirements):
     return "\n".join(f"{i + 1}. {r['label']} — {'обязательно' if r['type'] == 'must' else 'желательно'}" for i, r in enumerate(requirements))
+
+
+def review_buttons():
+    return [('Публиковать', 'Публиковать'), ('Вопросы об ожиданиях', '/screening'), ('Отмена', '/cancel')]
 
 
 def handle_employer(db, user, session, text, config, reply):
@@ -59,7 +64,35 @@ def handle_employer(db, user, session, text, config, reply):
         return False
     if command in ('/jobs', '/job', '/candidates', '/view', '/resume', '/evidence', '/metrics') and state.get('step') == 'invite_message':
         session.state = {}
-    if command == "/newjob":
+    if command in ('/screening', '/screening-on', '/screening-off'):
+        if state.get('step') != 'job_review':
+            reply('Сначала создайте вакансию и перейдите к проверке требований.')
+        else:
+            if command != '/screening':
+                selected = [q['id'] for q in PRESETS] if command == '/screening-on' else []
+                session.state = {**state, 'screening_questions': selected}
+            enabled = bool(session.state.get('screening_questions'))
+            reply('Дополнительные вопросы: ' + ('включены' if enabled else 'выключены') +
+                  '.\nИнтерес к задачам, ожидания по оплате и формату, срок выхода. '
+                  'Ответы не оцениваются автоматически; каждый вопрос можно пропустить. '
+                  'Всего будет не более 3 вопросов о навыках + 3 об ожиданиях.',
+                  [('Без дополнительных вопросов' if enabled else 'Добавить 3 вопроса', '/screening-off' if enabled else '/screening-on')] + review_buttons(), bind=True)
+    elif command == '/screening-answers':
+        parts = text.split()
+        row = db.get(Application, parts[1]) if len(parts) > 1 else None
+        if not row or row.status == 'withdrawn' or db.get(Job, row.job_id).owner_id != user.id:
+            reply('Отклик не найден.')
+        else:
+            items = [q for q in row.questions if q.get('kind') == 'screening']
+            index = min(page_number(parts[2] if len(parts) > 2 else 0), max(0, len(items) - 1))
+            buttons = [('К карточке', '/view ' + row.id)]
+            if index:
+                buttons.append(('← Вопрос', f'/screening-answers {row.id} {index - 1}'))
+            if index + 1 < len(items):
+                buttons.append(('Вопрос →', f'/screening-answers {row.id} {index + 1}'))
+            value = f"{items[index]['label']}\n{row.answers.get(items[index]['id'], 'Пока нет ответа')}" if items else 'Дополнительные вопросы не задавались.'
+            reply('Ожидания кандидата — без автоматической оценки\n\n' + value, buttons, application_id=row.id)
+    elif command == "/newjob":
         session.state = {"step": "job_title"}
         reply("Создадим вакансию. Как называется должность? Например: Junior Python-разработчик.\n/cancel — отмена.")
     elif command == '/metrics':
@@ -150,6 +183,8 @@ def handle_employer(db, user, session, text, config, reply):
             else:
                 summary = '\n'.join(f"• {r['label']}: {EVIDENCE[r['state']]}" for r in evidence(row.resume, row.answers, job.requirements)['requirements'])
                 buttons = [('Цитаты и ответы', '/evidence ' + row.id), ('Полное резюме', '/resume ' + row.id)]
+                if any(q.get('kind') == 'screening' for q in row.questions):
+                    buttons.append(('Ожидания кандидата', '/screening-answers ' + row.id))
                 if row.status == 'ready':
                     buttons.append(('Пригласить', '/invite ' + row.id))
                 buttons.append(('К списку', '/candidates ' + job.id))
@@ -183,13 +218,13 @@ def handle_employer(db, user, session, text, config, reply):
         else:
             requirements = extract(text)
             session.state = {**state, "step": "job_review", "description": text, "requirements": requirements}
-            reply("Проверьте требования, найденные локальным словарём:\n" + (requirement_summary(requirements) or "Навыки не распознаны.") + "\n\nИли пришлите исправленный список: каждое требование с новой строки; необязательное начните со знака +. До 15 требований. Не включайте возраст, пол и другие личные признаки.", [('Публиковать', 'Публиковать'), ('Отмена', '/cancel')], bind=True)
+            reply("Проверьте требования, найденные локальным словарём:\n" + (requirement_summary(requirements) or "Навыки не распознаны.") + "\n\nИли пришлите исправленный список: каждое требование с новой строки; необязательное начните со знака +. До 15 требований. Не включайте возраст, пол и другие личные признаки.", review_buttons(), bind=True)
     elif state.get("step") == "job_review":
         if text.lower() == "публиковать":
             if not state.get("requirements"):
                 reply("Сначала добавьте хотя бы одно профессиональное требование.")
             else:
-                job = Job(owner_id=user.id, company=user.company, title=state["title"], description=state["description"], requirements=state["requirements"])
+                job = Job(owner_id=user.id, company=user.company, title=state["title"], description=state["description"], requirements=state["requirements"], screening_questions=state.get('screening_questions', []))
                 db.add(job)
                 db.flush()
                 session.state = {}
@@ -204,7 +239,7 @@ def handle_employer(db, user, session, text, config, reply):
             else:
                 requirements = [{"id": f"r{i}", "skill": s.lstrip('+').strip().lower(), "label": s.lstrip('+').strip(), "type": "nice" if s.startswith('+') else "must", "source": "Подтверждено работодателем в MAX"} for i, s in enumerate(lines)]
                 session.state = {**state, "requirements": requirements}
-                reply("Обновлено:\n" + requirement_summary(requirements) + "\n\nПодтвердите или пришлите новый список.", [('Публиковать', 'Публиковать'), ('Отмена', '/cancel')], bind=True)
+                reply("Обновлено:\n" + requirement_summary(requirements) + "\n\nПодтвердите или пришлите новый список.", review_buttons(), bind=True)
     else:
         reply(f"{user.company} · Меню работодателя", [('Новая вакансия', '/newjob'), ('Вакансии и отклики', '/jobs'), ('Отменить текущий шаг', '/cancel')])
     return True

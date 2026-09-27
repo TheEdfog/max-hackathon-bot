@@ -31,6 +31,12 @@ SOFT_SKILL_LABELS = {item["value"]: item["label"] for item in SOFT_SKILL_OPTIONS
 SKILL_DISPLAY_NAMES = {
     "a/b testing": "A/B testing",
     "airflow": "Airflow",
+    "spark": "Spark / PySpark",
+    "hadoop": "Hadoop",
+    "greenplum": "Greenplum",
+    "pandas": "pandas",
+    "etl": "ETL / ELT",
+    "data quality": "Качество данных (DQ)",
     "api documentation": "API documentation",
     "api specification": "API specification",
     "asp.net core": "ASP.NET Core",

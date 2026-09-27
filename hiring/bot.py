@@ -83,8 +83,9 @@ def handle_update(db, event, config):
         pending = [q for q in app.questions if not app.answers.get(q['id'])]
         session.state = {'step': 'answer', 'application_id': app.id, 'question_id': pending[0]['id']}
         number = len(app.questions) - len(pending) + 1
+        choices = [] if pending[0].get('kind') == 'screening' else [('Опыта нет', 'Опыта нет.')]
         reply(f'{prefix}Уточнение {number} из {len(app.questions)}\n\n{pending[0]["text"]}\n\nМожно ответить текстом или выбрать кнопку. Пропуск не означает отсутствия опыта.',
-              [('Опыта нет', 'Опыта нет.'), ('Пропустить вопрос', 'Пропускаю уточнение, сведений недостаточно.'), ('Отмена', '/cancel')],
+              choices + [('Пропустить вопрос', 'Пропускаю уточнение, сведений недостаточно.'), ('Продолжить позже', '/pause'), ('Условия вакансии', '/vacancy ' + app.job_id)],
               application_id=app.id, bind=True)
 
     if kind == 'message_callback':
@@ -120,6 +121,23 @@ def handle_update(db, event, config):
     if handle_demo(session, text, reply):
         return
     state = dict(session.state)
+    if command == '/pause':
+        app = db.get(Application, state.get('application_id')) if state.get('application_id') else None
+        if user.role == 'candidate' and app and app.user_id == user.id and app.status == 'clarifying':
+            session.state = {}
+            reply('Пауза. Ответы сохранены. Возвращайтесь в удобное время — повторять их не нужно.',
+                  [('Продолжить', '/continue ' + app.id), ('Мои отклики', '/status')], application_id=app.id)
+        else:
+            reply('Для продолжения отклика откройте «Мои отклики».', [('Мои отклики', '/status')])
+        return
+    if command == '/vacancy':
+        job = db.get(Job, text.partition(' ')[2].strip())
+        if not job:
+            reply('Вакансия не найдена.')
+        else:
+            reply(f'{job.title} · {job.company}\n\n{job.description[:2200]}\n\nУсловия: {job.terms or "Уточните у работодателя"}\n\nЭто исходное описание работодателя. Текущий вопрос и ответы сохранены.',
+                  [('Мои отклики', '/status')])
+        return
     if command == '/cancel':
         session.state = {}
         reply('Текущий шаг отменён. Сохранённые вакансии и отклики не изменились.')
@@ -132,7 +150,7 @@ def handle_update(db, event, config):
         else:
             reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия — используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         return
-    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue'}
+    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers'}
     if command.startswith('/') and command not in known_commands:
         reply('Команда не распознана. Откройте меню или продолжите текущий шаг обычным сообщением.')
         return
@@ -180,7 +198,7 @@ def handle_update(db, event, config):
             pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:
                 session.state = {'step': 'answer', 'application_id': app.id}
-                ask_question(app)
+                ask_question(app, 'Продолжаем с сохранённого шага.\n\n')
         else:
             buttons = []
             if app.status == 'clarifying':
@@ -240,7 +258,7 @@ def handle_update(db, event, config):
                 answer(db, app, {pending[0]['id']: text})
             pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:
-                ask_question(app)
+                ask_question(app, 'Ответ сохранён.\n\n')
             else:
                 session.state = {}
                 reply('Спасибо! Ответы сохранены, уведомление работодателю поставлено в очередь.', [('Мои отклики', '/status')], application_id=app.id)
