@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import jwt
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer
@@ -51,8 +51,8 @@ class Requirement(BaseModel):
     @field_validator('id')
     @classmethod
     def reserved_ids(cls, value):
-        if value.startswith('screen_'):
-            raise ValueError('screen_ is reserved for optional interview questions')
+        if value.startswith(('screen_', 'test_')):
+            raise ValueError('screen_ and test_ are reserved for interview questions')
         return value
 
 
@@ -73,7 +73,8 @@ class JobBody(BaseModel):
     @field_validator("requirements")
     @classmethod
     def unique_requirements(cls, value):
-        if len({r.id for r in value}) != len(value) or len({r.skill.lower() for r in value}) != len(value):
+        from core.utils import normalize_skill
+        if len({r.id for r in value}) != len(value) or len({normalize_skill(r.skill) for r in value}) != len(value):
             raise ValueError("Требования не должны повторяться")
         return value
 
@@ -90,7 +91,7 @@ class ApplicationBody(BaseModel):
 
 
 class AnswersBody(BaseModel):
-    answers: dict[str, str] = Field(max_length=6)
+    answers: dict[str, str] = Field(max_length=9)
 
     @field_validator("answers")
     @classmethod
@@ -126,7 +127,7 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.2.0", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.3.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
 
@@ -142,7 +143,7 @@ def create_app(config=None):
         except ValueError:
             return JSONResponse({"detail": "Некорректный размер запроса"}, 400)
         if length > 6 * 1024 * 1024:
-            return JSONResponse({"detail": "Максимальный размер файла — 5 МБ"}, 413)
+            return JSONResponse({"detail": "Максимальный размер файла - 5 МБ"}, 413)
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             limit = 128 * 1024 if request.url.path == '/api/max/webhook' else 6 * 1024 * 1024
             chunks, received = [], 0
@@ -211,7 +212,7 @@ def create_app(config=None):
     @app.get("/health")
     def health(db=Depends(db_session)):
         db.execute(text("SELECT 1"))
-        return {"status": "ok", "version": "1.2.0"}
+        return {"status": "ok", "version": app.version}
 
     @app.get("/api/config")
     def public_config():
@@ -330,7 +331,7 @@ def create_app(config=None):
     def pdf_extract(file: UploadFile = File(...), user=Depends(current)):
         raw = file.file.read(5 * 1024 * 1024 + 1)
         if len(raw) > 5 * 1024 * 1024:
-            raise HTTPException(413, "Максимальный размер PDF — 5 МБ")
+            raise HTTPException(413, "Максимальный размер PDF - 5 МБ")
         if not raw.startswith(b"%PDF"):
             raise HTTPException(422, "Загрузите PDF с текстовым слоем")
         try:
@@ -339,6 +340,26 @@ def create_app(config=None):
         except ValueError:
             raise HTTPException(422, "Не удалось прочитать текст. Вставьте его вручную; сканы и защищённые PDF не поддерживаются.")
         return {"text": result}
+
+    @app.post('/api/jobs/{job_id}/apply-pdf', status_code=201)
+    def apply_pdf(job_id: str, file: UploadFile = File(...), consent: bool = Form(...),
+                  name: str = Form(min_length=2, max_length=160), user=Depends(current), db=Depends(db_session)):
+        from .talent_api import read_pdf, save_pdf
+        if consent is not True or not 2 <= len(name.strip()) <= 160:
+            raise HTTPException(422, 'Нужно согласие кандидата и имя от 2 до 160 символов')
+        raw = file.file.read(5 * 1024 * 1024 + 1)
+        resume = read_pdf(raw)
+        serialize_writes(db)
+        job = db.get(Job, job_id)
+        if not job:
+            raise HTTPException(404, 'Вакансия не найдена')
+        previous = db.scalar(select(Application).where(Application.job_id == job.id, Application.user_id == user.id))
+        row = submit(db, user, job, resume)
+        if not previous:
+            user.name = name.strip()
+            save_pdf(db, row, raw)
+        db.commit()
+        return application_view(db, row)
 
     @app.post("/api/jobs/{job_id}/apply", status_code=201)
     def apply(job_id: str, body: ApplicationBody, user=Depends(current), db=Depends(db_session)):

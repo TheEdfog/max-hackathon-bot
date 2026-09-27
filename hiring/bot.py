@@ -83,7 +83,7 @@ def handle_update(db, event, config):
         pending = [q for q in app.questions if not app.answers.get(q['id'])]
         session.state = {'step': 'answer', 'application_id': app.id, 'question_id': pending[0]['id']}
         number = len(app.questions) - len(pending) + 1
-        choices = [] if pending[0].get('kind') == 'screening' else [('Опыта нет', 'Опыта нет.')]
+        choices = [] if pending[0].get('kind') in ('screening', 'assessment') else [('Опыта нет', 'Опыта нет.')]
         reply(f'{prefix}Уточнение {number} из {len(app.questions)}\n\n{pending[0]["text"]}\n\nМожно ответить текстом или выбрать кнопку. Пропуск не означает отсутствия опыта.',
               choices + [('Пропустить вопрос', 'Пропускаю уточнение, сведений недостаточно.'), ('Продолжить позже', '/pause'), ('Условия вакансии', '/vacancy ' + app.job_id)],
               application_id=app.id, bind=True)
@@ -125,7 +125,7 @@ def handle_update(db, event, config):
         app = db.get(Application, state.get('application_id')) if state.get('application_id') else None
         if user.role == 'candidate' and app and app.user_id == user.id and app.status == 'clarifying':
             session.state = {}
-            reply('Пауза. Ответы сохранены. Возвращайтесь в удобное время — повторять их не нужно.',
+            reply('Пауза. Ответы сохранены. Возвращайтесь в удобное время - повторять их не нужно.',
                   [('Продолжить', '/continue ' + app.id), ('Мои отклики', '/status')], application_id=app.id)
         else:
             reply('Для продолжения отклика откройте «Мои отклики».', [('Мои отклики', '/status')])
@@ -139,6 +139,8 @@ def handle_update(db, event, config):
                   [('Мои отклики', '/status')])
         return
     if command == '/cancel':
+        from .imports import cancel_import
+        cancel_import(db, session)
         session.state = {}
         reply('Текущий шаг отменён. Сохранённые вакансии и отклики не изменились.')
         return
@@ -146,13 +148,18 @@ def handle_update(db, event, config):
         if text == '/privacy':
             reply('Тестовая версия: используйте вымышленные данные. Компания из вакансии увидит имя, опыт и ответы. MAX ID нужен для уведомлений. Сведения хранятся на сервере бота, во внешнюю языковую модель не передаются. Решение принимает человек. Не присылайте паспорт и чувствительные сведения. Отзыв через «Мои отклики» очищает тексты в базе откликов и серверной очереди. Уже доставленные сообщения MAX и резервные копии этим не удаляются. Сроки и очистка тестового стенда описаны в регламенте проекта.', [('Мои отклики', '/status'), ('Меню', '/help')])
         elif user.role == 'employer':
-            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Сводка откликов', '/metrics'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
+            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Сводка откликов', '/metrics'), ('Библиотека тестов', '/tests'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         else:
-            reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия — используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
+            reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия - используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         return
     known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers'}
+    known_commands.update({'/tests', '/test-template', '/newtest', '/archive-test', '/job-test', '/use-test', '/test-answers'})
+    known_commands.update({'/import-preview', '/import-confirm'})
     if command.startswith('/') and command not in known_commands:
         reply('Команда не распознана. Откройте меню или продолжите текущий шаг обычным сообщением.')
+        return
+    from .imports import handle_import
+    if handle_import(db, user, session, text, reply, ask_question):
         return
     if handle_employer(db, user, session, text, config, reply):
         return
@@ -173,9 +180,9 @@ def handle_update(db, event, config):
         apps = list(db.scalars(select(Application).where(Application.user_id == user.id).order_by(Application.created_at.desc(), Application.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
         buttons = [(f'{db.get(Job, a.job_id).title} · {STATUS[a.status]}', '/application ' + a.id) for a in apps[:PAGE_SIZE]]
         if page:
-            buttons.append(('← Назад', f'/status {page - 1}'))
+            buttons.append(('⬅️ Назад', f'/status {page - 1}'))
         if len(apps) > PAGE_SIZE:
-            buttons.append(('Далее →', f'/status {page + 1}'))
+            buttons.append(('Далее ➡️', f'/status {page + 1}'))
         reply(f'Мои отклики · страница {page + 1}' if apps else 'Откликов здесь пока нет. Откройте ссылку вакансии.', buttons + [('Меню', '/help')])
     elif command in ('/application', '/confirm', '/withdraw', '/continue'):
         app = db.get(Application, text.partition(' ')[2].strip())
@@ -222,9 +229,17 @@ def handle_update(db, event, config):
             reply('Для отправки отклика нужно согласие.', [('Согласен, продолжить', 'Согласен'), ('Отмена', '/cancel')], bind=True)
         else:
             session.state = {**state, 'step': 'resume'}
-            reply('Пришлите текст резюме или опишите опыт и проекты одним сообщением: 40–20 000 символов. Файлы и сканы пока не принимаются — скопируйте текст из документа. Не включайте паспортные данные.')
+            reply('Пришлите текст резюме (40-20 000 символов) или публичную ссылку на текстовый PDF в Яндекс Диске / Google Drive. Можно прислать GitHub-профиль или репозиторий. Ссылки сначала покажем для проверки. Сканы и закрытые файлы не поддерживаются. Не включайте паспортные данные.')
     elif state.get('step') == 'resume':
-        if not 40 <= len(text) <= 20000 or text.startswith('/'):
+        if text.startswith(('https://', 'http://')) and '\n' not in text and ' ' not in text:
+            from .imports import queue_import
+            from .sources import SourceError
+            try:
+                queue_import(db, user, session, text)
+                reply('Читаю публичный источник. Затем покажу текст для проверки.', [('Отмена', '/cancel')])
+            except SourceError as exc:
+                reply(str(exc))
+        elif not 40 <= len(text) <= 20000 or text.startswith('/'):
             reply('Нужен текст от 40 до 20 000 символов. Если отправили файл, скопируйте из него текст.')
         else:
             job = db.get(Job, state['job_id'])
@@ -245,13 +260,15 @@ def handle_update(db, event, config):
                 else:
                     session.state = {}
                     reply('Отклик сохранён и доступен работодателю.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
+    elif state.get('step') in ('import_waiting', 'import_ready'):
+        reply('Дождитесь результата и проверьте текст. Чтобы вставить свой текст, отмените импорт и снова откройте вакансию.', [('Отмена', '/cancel')])
     elif state.get('step') == 'answer':
         app = db.get(Application, state.get('application_id'))
         if not app or app.status != 'clarifying':
             session.state = {}
             reply('Уточнения завершены.', [('Мои отклики', '/status')])
         elif not 2 <= len(text) <= 2500 or text.startswith('/'):
-            reply('Ответ: 2–2500 символов. Если опыта нет, так и напишите.')
+            reply('Ответ: 2-2500 символов. Если опыта нет, так и напишите.')
         else:
             pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:

@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy import select
-from .db import Application, Audit, BotSession, Job, Outbox, User
+from .db import Application, ApplicationReview, ResumeDocument, Audit, BotSession, Job, Outbox, User
 from .chat_ui import queue_message
 from .matching import evidence, questions
 from .sandbox import destination
@@ -40,7 +40,8 @@ def submit(db, user, job, resume):
             raise HTTPException(409, "Отклик был отозван. Для повторного отклика свяжитесь с работодателем.")
         return existing
     app = Application(job_id=job.id, user_id=user.id, resume=resume,
-                      questions=questions(resume, job.requirements) + screening_questions(job.screening_questions or []))
+                      questions=questions(resume, job.requirements) + screening_questions(job.screening_questions or []) +
+                      [{key: q[key] for key in ('id', 'label', 'text', 'kind')} for q in (job.test_questions or [])])
     app.status = "clarifying" if app.questions else "ready"
     db.add(app)
     db.flush()
@@ -108,5 +109,9 @@ def withdraw_application(db, app):
     if session and session.state.get('application_id') == app.id:
         session.state = {}
     app.resume, app.answers, app.questions, app.invitation, app.status = '', {}, [], '', 'withdrawn'
+    for model in (ResumeDocument, ApplicationReview):
+        private = db.get(model, app.id)
+        if private:
+            db.delete(private)
     db.add(Audit(application_id=app.id, action='withdrawn'))
     return app

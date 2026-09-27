@@ -353,7 +353,7 @@ checks:
       headers: {Content-Type: application/json}
       body:
         name: DATA-API synthetic HR reader
-        scopes: [jobs:read, applications:read, events:read]
+        scopes: [jobs:read, applications:read, events:read, tests:read]
         expires_in_days: 1
     expected:
       statusCodes: [201]
@@ -416,6 +416,37 @@ checks:
         required: [items]
         properties:
           items: {type: array, minItems: 1}
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: integration-test-library
+    name: Чтение собственной библиотеки тестов
+    method: GET
+    path: /api/integrations/v1/tests
+    role: public
+    dependsOn: [integration-key]
+    request:
+      headers: {Authorization: "Bearer ${integrationToken}"}
+    expected:
+      statusCodes: [200]
+      contentType: application/json
+      requiredFields: [items, next_cursor]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: integration-pdf-privacy
+    name: Ключ без PII не получает оригинал резюме
+    method: GET
+    path: /api/integrations/v1/applications/{app_id}/resume.pdf
+    role: public
+    dependsOn: [integration-key, apply]
+    request:
+      path: {app_id: "${applicationId}"}
+      headers: {Authorization: "Bearer ${integrationToken}"}
+    expected:
+      statusCodes: [403]
+      contentType: application/json
+      requiredFields: [detail]
     timeoutMs: 5000
     repeatable: true
 

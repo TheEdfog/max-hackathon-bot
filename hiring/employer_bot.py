@@ -11,14 +11,15 @@ from .screening import PRESETS
 
 STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "withdrawn": "отозван"}
 EVIDENCE = {"mentioned": "указано в резюме", "answered": "уточнено в ответе", "negative": "сообщил об отсутствии опыта", "conflict": "противоречие", "review": "нужно прочитать ответ", "unknown": "нет сведений"}
+EVIDENCE['inferred'] = 'косвенный признак по связанной технологии; уточните опыт'
 
 
 def requirement_summary(requirements):
-    return "\n".join(f"{i + 1}. {r['label']} — {'обязательно' if r['type'] == 'must' else 'желательно'}" for i, r in enumerate(requirements))
+    return "\n".join(f"{i + 1}. {r['label']} - {'обязательно' if r['type'] == 'must' else 'желательно'}" for i, r in enumerate(requirements))
 
 
 def review_buttons():
-    return [('Публиковать', 'Публиковать'), ('Вопросы об ожиданиях', '/screening'), ('Отмена', '/cancel')]
+    return [('Публиковать', 'Публиковать'), ('Вопросы об ожиданиях', '/screening'), ('Тест для вакансии', '/job-test'), ('Отмена', '/cancel')]
 
 
 def handle_employer(db, user, session, text, config, reply):
@@ -54,7 +55,7 @@ def handle_employer(db, user, session, text, config, reply):
         return True
     if state.get("step") == "employer_company":
         if not 2 <= len(text) <= 160 or text.startswith("/"):
-            reply("Нужно название компании от 2 до 160 символов. /cancel — отмена.")
+            reply("Нужно название компании от 2 до 160 символов. /cancel - отмена.")
         else:
             user.role, user.company = "employer", text
             session.state = {}
@@ -62,6 +63,9 @@ def handle_employer(db, user, session, text, config, reply):
         return True
     if user.role != "employer":
         return False
+    from .assessment_bot import handle_tests
+    if handle_tests(db, user, session, text, reply):
+        return True
     if command in ('/jobs', '/job', '/candidates', '/view', '/resume', '/evidence', '/metrics') and state.get('step') == 'invite_message':
         session.state = {}
     if command in ('/screening', '/screening-on', '/screening-off'):
@@ -75,7 +79,7 @@ def handle_employer(db, user, session, text, config, reply):
             reply('Дополнительные вопросы: ' + ('включены' if enabled else 'выключены') +
                   '.\nИнтерес к задачам, ожидания по оплате и формату, срок выхода. '
                   'Ответы не оцениваются автоматически; каждый вопрос можно пропустить. '
-                  'Всего будет не более 3 вопросов о навыках + 3 об ожиданиях.',
+                  'До 3 вопросов о навыках + 3 об ожиданиях. Тест вакансии добавляется отдельно, до 3 заданий.',
                   [('Без дополнительных вопросов' if enabled else 'Добавить 3 вопроса', '/screening-off' if enabled else '/screening-on')] + review_buttons(), bind=True)
     elif command == '/screening-answers':
         parts = text.split()
@@ -87,14 +91,14 @@ def handle_employer(db, user, session, text, config, reply):
             index = min(page_number(parts[2] if len(parts) > 2 else 0), max(0, len(items) - 1))
             buttons = [('К карточке', '/view ' + row.id)]
             if index:
-                buttons.append(('← Вопрос', f'/screening-answers {row.id} {index - 1}'))
+                buttons.append(('⬅️ Вопрос', f'/screening-answers {row.id} {index - 1}'))
             if index + 1 < len(items):
-                buttons.append(('Вопрос →', f'/screening-answers {row.id} {index + 1}'))
+                buttons.append(('Вопрос ➡️', f'/screening-answers {row.id} {index + 1}'))
             value = f"{items[index]['label']}\n{row.answers.get(items[index]['id'], 'Пока нет ответа')}" if items else 'Дополнительные вопросы не задавались.'
-            reply('Ожидания кандидата — без автоматической оценки\n\n' + value, buttons, application_id=row.id)
+            reply('Ожидания кандидата - без автоматической оценки\n\n' + value, buttons, application_id=row.id)
     elif command == "/newjob":
         session.state = {"step": "job_title"}
-        reply("Создадим вакансию. Как называется должность? Например: Junior Python-разработчик.\n/cancel — отмена.")
+        reply("Создадим вакансию. Как называется должность? Например: Junior Python-разработчик.\n/cancel - отмена.")
     elif command == '/metrics':
         counts = dict(db.execute(select(Application.status, func.count()).join(Job).where(
             Job.owner_id == user.id, Application.status != 'withdrawn').group_by(Application.status)).all())
@@ -109,9 +113,9 @@ def handle_employer(db, user, session, text, config, reply):
         else:
             buttons = [(f"{'●' if j.active else '○'} {j.title}", '/job ' + j.id) for j in rows[:PAGE_SIZE]]
             if page:
-                buttons.append(('← Назад', f'/jobs {page - 1}'))
+                buttons.append(('⬅️ Назад', f'/jobs {page - 1}'))
             if len(rows) > PAGE_SIZE:
-                buttons.append(('Далее →', f'/jobs {page + 1}'))
+                buttons.append(('Далее ➡️', f'/jobs {page + 1}'))
             buttons.append(('Новая вакансия', '/newjob'))
             reply(f'Мои вакансии · страница {page + 1}. Выберите вакансию.', buttons)
     elif command == '/job':
@@ -133,11 +137,11 @@ def handle_employer(db, user, session, text, config, reply):
                 rows = list(db.scalars(select(Application).where(Application.job_id == job.id, Application.status != "withdrawn").order_by(Application.created_at, Application.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
                 buttons = [(f'{db.get(User, row.user_id).name} · {STATUS[row.status]}', '/view ' + row.id) for row in rows[:PAGE_SIZE]]
                 if page:
-                    buttons.append(('← Назад', f'/candidates {job.id} {page - 1}'))
+                    buttons.append(('⬅️ Назад', f'/candidates {job.id} {page - 1}'))
                 if len(rows) > PAGE_SIZE:
-                    buttons.append(('Далее →', f'/candidates {job.id} {page + 1}'))
+                    buttons.append(('Далее ➡️', f'/candidates {job.id} {page + 1}'))
                 buttons.append(('К вакансии', '/job ' + job.id))
-                reply(f'{job.title}\nОтклики · страница {page + 1}.\n' + ('Выберите кандидата. Порядок — по времени отклика, не рейтинг.' if rows else 'На этой странице откликов нет.'), buttons)
+                reply(f'{job.title}\nОтклики · страница {page + 1}.\n' + ('Выберите кандидата. Порядок - по времени отклика, не рейтинг.' if rows else 'На этой странице откликов нет.'), buttons)
         except HTTPException:
             reply("Вакансия не найдена. Список: /jobs")
     elif command in ("/view", "/invite", '/resume', '/evidence'):
@@ -153,7 +157,7 @@ def handle_employer(db, user, session, text, config, reply):
                         reply('Приглашение доступно после уточнений; повторно отправлять его не нужно.', [('К карточке', '/view ' + row.id)])
                     else:
                         session.state = {'step': 'invite_message', 'application_id': row.id}
-                        reply('Введите приглашение (10–1500 символов): предложите время и способ связи. Следующее сообщение будет отправлено кандидату.', [('Отмена', '/cancel')], application_id=row.id)
+                        reply('Введите приглашение (10-1500 символов): предложите время и способ связи. Следующее сообщение будет отправлено кандидату.', [('Отмена', '/cancel')], application_id=row.id)
                 else:
                     invite(db, row, parts[2])
                     reply("Приглашение сохранено и поставлено в очередь доставки кандидату в MAX.")
@@ -162,9 +166,9 @@ def handle_employer(db, user, session, text, config, reply):
                 chunk = row.resume[page * 2800:(page + 1) * 2800]
                 buttons = [('К карточке', '/view ' + row.id)]
                 if page:
-                    buttons.append(('← Назад', f'/resume {row.id} {page - 1}'))
+                    buttons.append(('⬅️ Назад', f'/resume {row.id} {page - 1}'))
                 if (page + 1) * 2800 < len(row.resume):
-                    buttons.append(('Далее →', f'/resume {row.id} {page + 1}'))
+                    buttons.append(('Далее ➡️', f'/resume {row.id} {page + 1}'))
                 reply(f'Резюме · часть {page + 1}\n{chunk or "Конец резюме."}', buttons, application_id=row.id)
             elif command == '/evidence':
                 index = page_number(parts[2] if len(parts) > 2 else 0)
@@ -176,15 +180,17 @@ def handle_employer(db, user, session, text, config, reply):
                     quote = '\n'.join(r['snippets'])[:900] or 'Нет упоминания в резюме.'
                     buttons = [('К карточке', '/view ' + row.id)]
                     if index:
-                        buttons.append(('← Требование', f'/evidence {row.id} {index - 1}'))
+                        buttons.append(('⬅️ Требование', f'/evidence {row.id} {index - 1}'))
                     if index + 1 < len(items):
-                        buttons.append(('Требование →', f'/evidence {row.id} {index + 1}'))
+                        buttons.append(('Требование ➡️', f'/evidence {row.id} {index + 1}'))
                     reply(f"{r['label']} · {EVIDENCE[r['state']]}\n\nЦитата:\n{quote}\n\nОтвет:\n{r['answer'] or 'Уточнение не запрашивалось или ещё не получено.'}", buttons, application_id=row.id)
             else:
                 summary = '\n'.join(f"• {r['label']}: {EVIDENCE[r['state']]}" for r in evidence(row.resume, row.answers, job.requirements)['requirements'])
                 buttons = [('Цитаты и ответы', '/evidence ' + row.id), ('Полное резюме', '/resume ' + row.id)]
                 if any(q.get('kind') == 'screening' for q in row.questions):
                     buttons.append(('Ожидания кандидата', '/screening-answers ' + row.id))
+                if any(q.get('kind') == 'assessment' for q in row.questions):
+                    buttons.append(('Ответы на тест', '/test-answers ' + row.id))
                 if row.status == 'ready':
                     buttons.append(('Пригласить', '/invite ' + row.id))
                 buttons.append(('К списку', '/candidates ' + job.id))
@@ -224,7 +230,7 @@ def handle_employer(db, user, session, text, config, reply):
             if not state.get("requirements"):
                 reply("Сначала добавьте хотя бы одно профессиональное требование.")
             else:
-                job = Job(owner_id=user.id, company=user.company, title=state["title"], description=state["description"], requirements=state["requirements"], screening_questions=state.get('screening_questions', []))
+                job = Job(owner_id=user.id, company=user.company, title=state["title"], description=state["description"], requirements=state["requirements"], screening_questions=state.get('screening_questions', []), test_questions=state.get('test_questions', []))
                 db.add(job)
                 db.flush()
                 session.state = {}

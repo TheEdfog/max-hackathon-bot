@@ -115,6 +115,14 @@ SKILL_DISPLAY_NAMES = {
 }
 
 SKILL_ALIASES = {
+    "питон": "python",
+    "питоне": "python",
+    "питоном": "python",
+    "postres": "postgresql",
+    "постгрес": "postgresql",
+    "постгресом": "postgresql",
+    "докер": "docker",
+    "гит": "git",
     ".net": "dotnet",
     ".net core": "dotnet",
     "net core": "dotnet",

@@ -6,7 +6,7 @@ from .sandbox import PERSONAS, identity
 PAGE_SIZE = 5
 
 
-def queue_message(db, user, text, buttons=None, application_id=None, state=None):
+def queue_message(db, user, text, buttons=None, application_id=None, state=None, import_id=None):
     target, persona = identity(user)
     if persona:
         text = f'[ТЕСТ · {PERSONAS[persona][0]}]\n' + text
@@ -21,7 +21,7 @@ def queue_message(db, user, text, buttons=None, application_id=None, state=None)
             db.flush()
             rows.append([{'type': 'callback', 'text': label[:80], 'payload': action.id}])
         body['attachments'] = [{'type': 'inline_keyboard', 'payload': {'buttons': rows}}]
-    db.add(Outbox(max_id=target, body=body, application_id=application_id))
+    db.add(Outbox(max_id=target, body=body, application_id=application_id, import_id=import_id))
 
 
 def consume_action(db, user, session, payload):

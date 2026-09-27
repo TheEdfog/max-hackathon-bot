@@ -47,6 +47,9 @@ def main():
     issued = call('POST', '/api/integration-keys', {'name': 'Synthetic smoke ATS',
         'scopes': ['jobs:read', 'jobs:write', 'applications:read', 'events:read', 'invitations:write']}, employer, 201)
     machine = issued['token']
+    talent_key = call('POST', '/api/integration-keys', {'name': 'Synthetic talent smoke',
+        'scopes': ['jobs:write', 'jobs:read', 'tests:read', 'tests:write', 'applications:read', 'applications:pii', 'applications:write']}, employer, 201)
+    talent = talent_key['token']
     if args.verify_existing:
         rows = call('GET', '/api/applications', token=candidate)
         assert len(rows) == 1 and rows[0]['status'] == 'confirmed'
@@ -54,6 +57,10 @@ def main():
         synced = call('GET', prefix + '/applications/' + rows[0]['id'], token=machine)
         assert synced['status'] == 'confirmed' and 'resume' not in synced
         assert call('GET', prefix + '/events', token=machine)['items']
+        assert call('GET', prefix + '/tests', token=talent)['items']
+        assert call('GET', prefix + '/applications/' + rows[0]['id'] + '/review', token=talent)['stage'] == 'shortlisted'
+        assert rows[0]['answers']['test_0']
+        call('DELETE', '/api/integration-keys/' + talent_key['id'], token=employer, expected=204)
         call('DELETE', '/api/integration-keys/' + issued['id'], token=employer, expected=204)
         call('GET', prefix + '/jobs', token=machine, expected=401)
         print('Restart smoke: persistent application and HR feed verified; no MAX sends.')
@@ -64,18 +71,31 @@ def main():
         'screening_questions': ['screen_conditions']}
     jid = call('PUT', prefix + '/jobs/by-external/smoke/REQ-1', vacancy, machine)['id']
     assert call('PUT', prefix + '/jobs/by-external/smoke/REQ-1', vacancy, machine)['id'] == jid
+    template = call('POST', prefix + '/tests', {'title': 'Synthetic Python exercise',
+        'questions': [{'text': 'Describe a small test case for a catalogue.', 'rubric': 'Private synthetic checklist'}]}, talent, 201)
+    call('PUT', prefix + '/jobs/' + jid + '/assessment', {'template_id': template['id'], 'expected_version': 1}, talent)
+    draft = call('POST', prefix + '/jobs/draft-from-resume', {'resume': 'I used Python to build a synthetic catalogue with tests.'}, talent)
+    assert draft['review_required'] and not draft['published']
     app = call('POST', f'/api/jobs/{jid}/apply', {'name': 'Synthetic candidate', 'resume': 'I used Python to build a synthetic catalog with automated tests.', 'consent': True}, candidate, 201)
     aid = app['id']
     assert app['status'] == 'clarifying'
     app = call('POST', f'/api/applications/{aid}/answers',
-               {'answers': {'screen_conditions': 'Synthetic conditions: discuss at interview.'}}, candidate)
+               {'answers': {'screen_conditions': 'Synthetic conditions: discuss at interview.',
+                            'test_0': 'Synthetic test checks a missing catalogue item.'}}, candidate)
     assert app['status'] == 'ready'
+    assert 'Private synthetic checklist' not in json.dumps(app)
+    review_path = prefix + '/applications/' + aid + '/review'
+    body = {'expected_version': 0, 'stage': 'shortlisted', 'note': 'Synthetic note', 'tags': ['smoke']}
+    assert call('PATCH', review_path, body, talent)['version'] == 1
+    call('PATCH', review_path, body, talent, expected=409)
+    call('GET', prefix + '/applications/' + aid + '/resume.pdf', token=machine, expected=403)
     call('POST', prefix + f'/applications/{aid}/invite', {'message': 'Synthetic invitation for container smoke.'}, machine)
     assert call('POST', f'/api/applications/{aid}/confirm', token=candidate)['status'] == 'confirmed'
     assert call('GET', prefix + '/events', token=machine)['items']
     call('DELETE', '/api/integration-keys/' + issued['id'], token=employer, expected=204)
+    call('DELETE', '/api/integration-keys/' + talent_key['id'], token=employer, expected=204)
     call('GET', prefix + '/jobs', token=machine, expected=401)
-    print('HTTP smoke: HR upsert, screening, invitation, confirmation and revocation verified; no MAX sends.')
+    print('HTTP smoke: HR upsert, test snapshot, draft, review conflict, screening, invitation, confirmation and revocation verified; no MAX sends.')
 
 
 if __name__ == '__main__':

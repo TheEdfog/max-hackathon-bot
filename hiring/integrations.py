@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from .db import Application, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
 from .services import application_view, invite, owned_job
 
-Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'invitations:write', 'events:read', 'metrics:read']
+Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'applications:write', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
 READ_SCOPES = ['jobs:read', 'applications:read', 'events:read', 'metrics:read']
 T = TypeVar('T')
 
@@ -119,7 +119,7 @@ class Metrics(BaseModel):
 class KeyCreate(BaseModel):
     model_config = {'extra': 'forbid'}
     name: str = Field(min_length=2, max_length=80)
-    scopes: list[Scope] = Field(default_factory=lambda: list(READ_SCOPES), min_length=1, max_length=7)
+    scopes: list[Scope] = Field(default_factory=lambda: list(READ_SCOPES), min_length=1, max_length=10)
     expires_in_days: int = Field(default=30, ge=1, le=90)
 
     @field_validator('name')
@@ -136,6 +136,8 @@ class KeyCreate(BaseModel):
             raise ValueError('Scopes must be unique')
         if 'applications:pii' in value and 'applications:read' not in value:
             raise ValueError('applications:pii requires applications:read')
+        if 'applications:write' in value and 'applications:pii' not in value:
+            raise ValueError('applications:write requires applications:pii')
         return value
 
 
@@ -335,4 +337,6 @@ def install_routes(app, config, db_session, employer, job_view):
                 'applications': sum(n for status, n in counts.items() if status != 'withdrawn'), 'statuses': counts,
                 'notice': 'Фактические статусы, не рейтинг кандидатов'}
 
+    from .talent_api import install_talent_routes
+    install_talent_routes(router, require, db_session, owned_application)
     app.include_router(router)
