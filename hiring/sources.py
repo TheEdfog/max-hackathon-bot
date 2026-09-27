@@ -47,18 +47,20 @@ def source_kind(value):
             re.fullmatch(r'/file/d/[A-Za-z0-9_-]+(?:/view)?/?', p.path)
             or p.path in ('/open', '/uc') and re.fullmatch(r'[A-Za-z0-9_-]+', parse_qs(p.query).get('id', [''])[0])):
         return 'google'
-    if p.hostname == 'cloud.mail.ru' and p.path.startswith('/public/'):
+    if p.hostname == 'cloud.mail.ru' and re.fullmatch(r'/public/[A-Za-z0-9]+/[A-Za-z0-9]+/?', p.path):
         return 'mail'
-    raise SourceError('Поддерживаются ссылки на GitHub, файлы Яндекс Диска и Google Drive. Для остальных источников загрузите PDF или вставьте текст.')
+    raise SourceError('Поддерживаются ссылки на GitHub, файлы Яндекс Диска, Google Drive и Облака Mail.ru. Для остальных источников загрузите PDF или вставьте текст.')
 
 
 def allowed_download(host, provider):
     if provider == 'github':
         return host == 'api.github.com'
     if provider == 'yandex':
-        return host == 'cloud-api.yandex.net' or bool(re.fullmatch(r'[a-z0-9-]+\.disk\.yandex\.(?:ru|com|net)', host))
+        return host == 'cloud-api.yandex.net' or bool(re.fullmatch(r'[a-z0-9-]+\.(?:disk\.yandex\.(?:ru|com|net)|storage\.yandex\.net)', host))
     if provider == 'google':
         return host in ('drive.google.com', 'drive.usercontent.google.com') or bool(re.fullmatch(r'doc-[a-z0-9-]+-docs\.googleusercontent\.com', host))
+    if provider == 'mail':
+        return host == 'cloud.mail.ru' or bool(re.fullmatch(r'cloclo[0-9]+\.(?:cloud\.mail\.ru|datacloudmail\.ru)', host))
     return False
 
 
@@ -67,7 +69,7 @@ class PublicReader:
         self.deadline = time.monotonic() + 25
         self.calls = 0
 
-    def get(self, url, provider, limit=MAX_BYTES):
+    def get(self, url, provider, limit=MAX_BYTES, optional=False):
         for _ in range(4):
             p = parsed_url(url)
             if not allowed_download(p.hostname, provider):
@@ -87,6 +89,8 @@ class PublicReader:
                         continue
                     if response.status_code in (403, 429):
                         raise SourceError('Источник ограничил доступ или частоту запросов. Повторите позже; вход и ограничения мы не обходим.')
+                    if optional and response.status_code == 404:
+                        return b'{}'
                     if response.status_code != 200:
                         raise SourceError('Публичный файл не найден или недоступен для скачивания.')
                     size = response.headers.get('content-length', '')
@@ -100,8 +104,8 @@ class PublicReader:
                     return bytes(output)
         raise SourceError('Слишком много перенаправлений.')
 
-    def json(self, url, provider):
-        return json.loads(self.get(url, provider, 512 * 1024))
+    def json(self, url, provider, optional=False):
+        return json.loads(self.get(url, provider, 512 * 1024, optional=optional))
 
 
 def github_import(url, reader):
@@ -140,8 +144,6 @@ def github_import(url, reader):
 
 def _import_source(url, reader=None):
     provider = source_kind(url)
-    if provider == 'mail':
-        raise SourceError('Облако Mail.ru может требовать вход или подписку для скачивания. Автоимпорт пока не поддерживается: скачайте PDF самостоятельно и загрузите его через API либо вставьте текст в чат.')
     reader = reader or PublicReader()
     try:
         if provider == 'github':
@@ -150,6 +152,20 @@ def _import_source(url, reader=None):
             result = reader.json('https://cloud-api.yandex.net/v1/disk/public/resources/download?' +
                                  urlencode({'public_key': url}), provider)
             download = result.get('href', '') if isinstance(result, dict) else ''
+        elif provider == 'mail':
+            # Parse only the public page's JSON download dispatcher, never JS.
+            # This is a best-effort page contract, not a stable official API.
+            page = reader.get(url, provider, limit=1024 * 1024).decode('utf-8', 'replace')
+            marker = re.search(r'"dispatcher"\s*:\s*', page)
+            if not marker:
+                raise SourceError('Mail.ru не предоставил публичную загрузку. Вставьте текст или загрузите PDF через API; вход и ограничения не обходим.')
+            data, _ = json.JSONDecoder().raw_decode(page[marker.end():])
+            root = data['weblink_get']['url']
+            parsed = parsed_url(root)
+            if (not re.fullmatch(r'cloclo[0-9]+\.(?:cloud\.mail\.ru|datacloudmail\.ru)', parsed.hostname)
+                    or not parsed.path.startswith('/public/') or parsed.query or parsed.fragment):
+                raise SourceError('Формат публичной загрузки Mail.ru изменился. Вставьте текст или загрузите PDF через API.')
+            download = root.rstrip('/') + '/' + parsed_url(url).path.strip('/').removeprefix('public/')
         else:
             p = parsed_url(url)
             match = re.search(r'/file/d/([A-Za-z0-9_-]+)', p.path)

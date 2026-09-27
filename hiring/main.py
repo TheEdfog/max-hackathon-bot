@@ -127,7 +127,7 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.3.0", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.4.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
 

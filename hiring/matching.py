@@ -1,6 +1,6 @@
 """Explainable extraction. Evidence is a source statement, never verified competence."""
 import re
-from apps.web.services.vacancy_parser_service import extract_requirements_locally
+from apps.web.services.vacancy_parser_service import extract_requirements_locally, KNOWN_SKILL_ALIASES
 from core.utils import normalize_skill, SKILL_ALIASES
 
 NEGATION = re.compile(r"\b(?:нет|не\s+(?:работал\w*|использовал\w*|изучал\w*|владе\w*|освоил\w*|знаю|знаком\w*|имею)|без\s+опыта|не\s+было|не\s+доводилось|never|no\s+experience|(?:do\s+not|don't|did\s+not|didn't)\s+(?:know|use|work))\b", re.I)
@@ -13,11 +13,25 @@ for alias, canonical in SKILL_ALIASES.items():
     ALIASES.setdefault(canonical, [canonical])
     if alias not in ALIASES[canonical]:
         ALIASES[canonical].append(alias)
+for canonical, aliases in KNOWN_SKILL_ALIASES.items():
+    canonical = normalize_skill(canonical)
+    ALIASES.setdefault(canonical, [canonical])
+    ALIASES[canonical] = sorted(set(ALIASES[canonical]) | set(aliases) | {canonical}, key=lambda value: (-len(value), value))
 
 # Directional evidence, not equivalence or a competence claim. Never SQL -> DBMS.
 RELATED = {'sql': ('postgresql', 'mysql', 'mssql', 'sqlite', 'clickhouse'),
-           'orm': ('sqlalchemy', 'entity framework'),
-           'ci/cd': ('github actions', 'gitlab ci', 'jenkins')}
+           'orm': ('sqlalchemy', 'entity framework', 'hibernate'),
+           'ci/cd': ('github actions', 'gitlab ci', 'jenkins'),
+           'unit testing': ('pytest', 'jest', 'vitest'),
+           'automated testing': ('unit testing', 'pytest', 'jest', 'vitest', 'cypress', 'selenium', 'playwright'),
+           'raw sql': ('sql optimization', 'sql profiling'),
+           'sql profiling': ('sql optimization',),
+           'requirements analysis': ('requirements gathering', 'user stories', 'bpmn', 'uml'),
+           'requirements gathering': ('user stories',),
+           'backlog management': ('user stories', 'roadmap'),
+           'business process modeling': ('bpmn',),
+           'project management': ('scrum', 'kanban', 'backlog management', 'roadmap'),
+           'product management': ('customer development', 'product analytics', 'a/b testing', 'roadmap')}
 
 
 def skill_pattern(skill):
@@ -49,10 +63,6 @@ def statements(text):
 
 def extract(text):
     items = extract_requirements_locally(text)
-    seen = {item['skill_norm'] for item in items}
-    for canonical in ('python', 'postgresql', 'docker', 'git'):
-        if canonical not in seen and skill_pattern(canonical).search(text):
-            items.append({'skill_norm': canonical, 'display_name': canonical, 'type': 'must', 'source_text': ''})
     return [{"id": f"r{i}", "skill": item["skill_norm"], "label": item.get("display_name") or item["skill_norm"], "type": item.get("type", "must"), "source": item.get("source_text", "")} for i, item in enumerate(items[:15])]
 
 

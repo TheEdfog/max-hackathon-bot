@@ -125,6 +125,11 @@ def main():
     call('PATCH', review_path, body, talent, expected=409)
     call('GET', prefix + '/applications/' + aid + '/resume.pdf', token=machine, expected=403)
     assert call('GET', prefix + '/applications/' + aid + '/resume.pdf', token=talent) == pdf
+    match = call('GET', prefix + '/applications/' + aid + '/compatibility', token=talent)
+    assert match['method'] == 'vadim-evidence-adapted-1' and match['total_pct'] > 0
+    call('GET', prefix + '/applications/' + aid + '/compatibility', token=machine, expected=403)
+    github = call('GET', prefix + '/applications/' + aid + '/github', token=talent)
+    assert github['status'] == 'not_requested' and github['links'] == []
     call('POST', prefix + f'/applications/{aid}/invite', {'message': 'Synthetic invitation for container smoke.'}, machine)
     assert call('POST', f'/api/applications/{aid}/confirm', token=candidate)['status'] == 'confirmed'
     assert call('GET', prefix + '/events', token=machine)['items']

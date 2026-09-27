@@ -48,6 +48,14 @@ python -m hiring.integration_keys --owner-id INTERNAL_EMPLOYER_ID --revoke KEY_I
 
 Все пути ниже имеют префикс `/api/integrations/v1`, если не указано иное.
 
+### Дополнения 1.4: объяснимое покрытие и GitHub по запросу
+
+- `GET /applications/{id}/compatibility`: версия метода, must/nice/total, слагаемые и цитаты по каждому требованию. Нужны `applications:read` + `applications:pii`. Это [адаптация формулы Вадима](VADIM-REVIEW.md), не рейтинг/вероятность найма; отсутствие требований возвращает `null`.
+- `GET /applications/{id}/github`: состояние `not_requested/pending/working/ready/failed`, допустимые ссылки из самого отклика, кэшированный отчёт и время истечения. Нужны read + pii. Этот GET **не запускает сеть**.
+- `POST /applications/{id}/github`, JSON `{"url":"https://github.com/USERNAME"}`: явная постановка в очередь, HTTP 202. Нужен `applications:write` (включая read + pii). URL должен уже присутствовать в отклике кандидата. Повтор использует имеющееся задание/кэш; другой URL при активном кэше - 409. Результат получают GET-опросом; 202 не означает успешный импорт.
+
+Оба метода проверяют компанию; отзыв даёт 410 и удаляет GitHub-кэш. Обзор не меняет оценку/статус кандидата, не публикует событие `application.reviewed` и не содержит скрытых тестовых критериев. [Лимиты и состав GitHub-обзора](PUBLIC-SOURCES.md). В API-сценарии для фоновой обработки необходим запущенный worker; обычный production runtime включает его. Обзор требует публичного доступа к GitHub, а не ключа внешней LLM.
+
 ### Резюме и черновик вакансии
 
 - `GET /applications/{id}/resume.txt` - исходный текст отклика.

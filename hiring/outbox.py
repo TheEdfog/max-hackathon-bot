@@ -70,9 +70,11 @@ def start_worker(factory, config):
     thread = threading.Thread(target=run, daemon=True, name='max-outbox')
     def import_loop():
         from .imports import deliver_import
+        from .github_review import deliver_review
         while not stop.wait(1):
             try:
                 deliver_import(factory)
+                deliver_review(factory)
             except Exception as exc:
                 log.error('import worker error type=%s', type(exc).__name__)
                 stop.wait(2)

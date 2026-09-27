@@ -86,6 +86,19 @@ class ResumeDocument(Base):
     provider: Mapped[str] = mapped_column(String(24), default='upload')
 
 
+class GithubReview(Base):
+    __tablename__ = 'hiring_github_reviews'
+    application_id: Mapped[str] = mapped_column(ForeignKey('hiring_applications.id'), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    url: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str] = mapped_column(Text, default='')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ImportTask(Base):
     __tablename__ = 'hiring_import_tasks'
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)

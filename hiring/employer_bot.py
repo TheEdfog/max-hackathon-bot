@@ -12,7 +12,7 @@ from .screening import PRESETS
 
 STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "withdrawn": "отозван"}
 EVIDENCE = {"mentioned": "указано в резюме", "answered": "уточнено в ответе", "negative": "сообщил об отсутствии опыта", "conflict": "противоречие", "review": "нужно прочитать ответ", "unknown": "нет сведений"}
-EVIDENCE['inferred'] = 'косвенный признак по связанной технологии; уточните опыт'
+EVIDENCE['inferred'] = 'косвенный признак по связанному навыку; уточните опыт'
 
 
 def requirement_summary(requirements):
@@ -64,6 +64,9 @@ def handle_employer(db, user, session, text, config, reply):
         return True
     if user.role != "employer":
         return False
+    from .review_bot import handle_review
+    if handle_review(db, user, text, reply):
+        return True
     from .assessment_bot import handle_tests
     if handle_tests(db, user, session, text, reply):
         return True
@@ -188,6 +191,7 @@ def handle_employer(db, user, session, text, config, reply):
             else:
                 summary = '\n'.join(f"• {r['label']}: {EVIDENCE[r['state']]}" for r in evidence(row.resume, row.answers, job.requirements)['requirements'])
                 buttons = [('Цитаты и ответы', '/evidence ' + row.id), ('Полное резюме', '/resume ' + row.id)]
+                buttons.extend([('Покрытие требований', '/match ' + row.id), ('GitHub-обзор', '/github ' + row.id)])
                 if any(q.get('kind') == 'screening' for q in row.questions):
                     buttons.append(('Ожидания кандидата', '/screening-answers ' + row.id))
                 if any(q.get('kind') == 'assessment' for q in row.questions):

@@ -72,6 +72,28 @@ class SourcePreview(BaseModel):
     stored: Literal[False]
 
 
+class GithubReviewInfo(BaseModel):
+    status: Literal['not_requested', 'pending', 'working', 'ready', 'failed']
+    links: list[str]
+    report: dict | None
+    error: str
+    expires_at: datetime | None
+    notice: str
+
+
+class CompatibilityInfo(BaseModel):
+    method: str
+    total_pct: float | None
+    must_pct: float | None
+    nice_pct: float | None
+    must_count: int
+    nice_count: int
+    requirements: list[dict]
+    notice: str
+    formula: str
+    limitations: list[str]
+
+
 def vacancy_draft(body):
     # Never copy contact details, identity or original source snippets to a vacancy.
     rows = evidence(body.resume, {}, extract(body.resume))['requirements']
@@ -133,6 +155,26 @@ def install_talent_routes(router, require, db_session, owned_application):
         if row.status == 'withdrawn':
             raise HTTPException(410, 'Отклик отозван, персональные данные удалены')
         return row
+
+    @router.get('/applications/{app_id}/compatibility', response_model=CompatibilityInfo)
+    def match(app_id: str, identity=Depends(require('applications:read')), db=Depends(db_session)):
+        from .compatibility import compatibility
+        from .db import Job
+        row = private_application(db, app_id, identity)
+        return compatibility(row.resume, row.answers, db.get(Job, row.job_id).requirements)
+
+    @router.get('/applications/{app_id}/github', response_model=GithubReviewInfo)
+    def github_get(app_id: str, identity=Depends(require('applications:read')), db=Depends(db_session)):
+        from .github_review import review_view
+        return review_view(db, private_application(db, app_id, identity))
+
+    @router.post('/applications/{app_id}/github', response_model=GithubReviewInfo, status_code=202)
+    def github_request(app_id: str, body: SourceBody, identity=Depends(require('applications:write')), db=Depends(db_session)):
+        from .github_review import request_review
+        serialize_writes(db)
+        result = request_review(db, private_application(db, app_id, identity), identity[1], body.url)
+        db.commit()
+        return result
 
     @router.post('/jobs/draft-from-resume', response_model=DraftResult)
     def draft(body: DraftBody, identity=Depends(require('jobs:write'))):

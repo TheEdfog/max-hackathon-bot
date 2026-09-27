@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from sqlalchemy import select
-from .db import Application, ApplicationReview, ResumeDocument, Audit, BotSession, Job, Outbox, User
+from .db import Application, ApplicationReview, ResumeDocument, GithubReview, Audit, BotSession, Job, Outbox, User
 from .chat_ui import queue_message
 from .matching import evidence, questions
 from .sandbox import destination
@@ -109,7 +109,7 @@ def withdraw_application(db, app):
     if session and session.state.get('application_id') == app.id:
         session.state = {}
     app.resume, app.answers, app.questions, app.invitation, app.status = '', {}, [], '', 'withdrawn'
-    for model in (ResumeDocument, ApplicationReview):
+    for model in (ResumeDocument, ApplicationReview, GithubReview):
         private = db.get(model, app.id)
         if private:
             db.delete(private)

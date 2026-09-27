@@ -156,10 +156,15 @@ def test_unsafe_urls_rejected(url):
 
 def test_source_contracts_and_mail_fallback():
     assert source_kind('https://cloud.mail.ru/public/abc/def') == 'mail'
-    with pytest.raises(SourceError, match='пока не поддерживается'):
-        import_source('https://cloud.mail.ru/public/abc/def')
+    class LoginPage:
+        def get(self, *args, **kwargs):
+            return b'<html>Login required</html>'
+    with pytest.raises(SourceError, match='не предоставил'):
+        import_source('https://cloud.mail.ru/public/abc/def', LoginPage())
     assert allowed_download('downloader.disk.yandex.ru', 'yandex')
     assert not allowed_download('downloader.disk.yandex.ru.evil.test', 'yandex')
+    assert allowed_download('s41klg.storage.yandex.net', 'yandex')
+    assert not allowed_download('s41klg.storage.yandex.net.evil.test', 'yandex')
     class Fake:
         def json(self, url, provider):
             return {'href': 'https://downloader.disk.yandex.ru/fake'}

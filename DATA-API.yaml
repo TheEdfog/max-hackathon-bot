@@ -450,6 +450,38 @@ checks:
     timeoutMs: 5000
     repeatable: true
 
+  - id: integration-compatibility-privacy
+    name: Ключ без PII не получает оценку с цитатами
+    method: GET
+    path: /api/integrations/v1/applications/{app_id}/compatibility
+    role: public
+    dependsOn: [integration-key, apply]
+    request:
+      path: {app_id: "${applicationId}"}
+      headers: {Authorization: "Bearer ${integrationToken}"}
+    expected:
+      statusCodes: [403]
+      contentType: application/json
+      requiredFields: [detail]
+    timeoutMs: 5000
+    repeatable: true
+
+  - id: integration-github-privacy
+    name: Ключ без PII не получает ссылки и GitHub-обзор кандидата
+    method: GET
+    path: /api/integrations/v1/applications/{app_id}/github
+    role: public
+    dependsOn: [integration-key, apply]
+    request:
+      path: {app_id: "${applicationId}"}
+      headers: {Authorization: "Bearer ${integrationToken}"}
+    expected:
+      statusCodes: [403]
+      contentType: application/json
+      requiredFields: [detail]
+    timeoutMs: 5000
+    repeatable: true
+
 # Run cleanup even if a later check fails, provided the relevant ID was extracted.
 # Current API erases resume/answers and closes the vacancy; technical records remain.
 cleanup:
