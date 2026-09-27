@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUIRED = ('README.md', 'Dockerfile', 'Dockerfile.hiring', 'docker-compose.yml',
+REQUIRED = ('README.md', 'Dockerfile', 'docker-compose.yml',
             'compose.production.yml', 'deploy/Caddyfile', 'requirements-hiring.lock',
             'requirements-hiring-test.lock', 'DATA-API.yaml', 'openapi.json',
             'docs/DEPLOYMENT.md', 'docs/HR-INTEGRATION.md', 'docs/DATA-POLICY.md')

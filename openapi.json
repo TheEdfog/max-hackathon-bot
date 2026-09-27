@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "paths": {
     "/health": {
@@ -894,22 +894,6 @@
       "post": {
         "summary": "Webhook",
         "operationId": "webhook_api_max_webhook_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/demo": {
-      "post": {
-        "summary": "Demo",
-        "operationId": "demo_api_auth_demo_post",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2397,6 +2381,32 @@
         ]
       }
     },
+    "/api/integrations/v1/tests/ai-status": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Ai Status",
+        "operationId": "ai_status_api_integrations_v1_tests_ai_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiDraftStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ]
+      }
+    },
     "/api/integrations/v1/tests/{test_id}": {
       "get": {
         "tags": [
@@ -2675,9 +2685,21 @@
             "type": "string",
             "enum": [
               "gigachat",
+              "llm",
               "local"
             ],
             "title": "Source"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           },
           "model": {
             "anyOf": [
@@ -2720,6 +2742,66 @@
           "notice"
         ],
         "title": "AiDraftResult"
+      },
+      "AiDraftStatus": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "owner_requests_24h": {
+            "type": "integer",
+            "title": "Owner Requests 24H"
+          },
+          "owner_limit_24h": {
+            "type": "integer",
+            "title": "Owner Limit 24H"
+          },
+          "available_requests": {
+            "type": "integer",
+            "title": "Available Requests"
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "title": "Max Output Tokens"
+          },
+          "cache_hours": {
+            "type": "integer",
+            "title": "Cache Hours",
+            "default": 24
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "Считаются запросы, включая неудачные. Это не баланс провайдера. Кэш не расходует запросы."
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "ready",
+          "owner_requests_24h",
+          "owner_limit_24h",
+          "available_requests",
+          "max_output_tokens"
+        ],
+        "title": "AiDraftStatus"
       },
       "AnswersBody": {
         "properties": {

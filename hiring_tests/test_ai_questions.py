@@ -1,8 +1,10 @@
 import json
+from dataclasses import replace
 import pytest
 import httpx
 from sqlalchemy import func, select
 from hiring import ai_questions as ai
+from hiring import llm
 from hiring.db import AssessmentTemplate
 from test_product import client, register
 from test_integrations import key, PREFIX
@@ -18,8 +20,8 @@ def headers(client, name='owner', scopes=None):
 
 
 def enable(client):
-    client.app.state.config.gigachat_enabled = True
-    client.app.state.config.cloudru_api_key = 'synthetic-runtime-key'
+    client.app.state.config.llm = llm.LLMSettings(provider='cloudru', base_url=llm.CLOUDRU_URL,
+                                                model=llm.CLOUDRU_MODEL, api_key='synthetic-runtime-key')
 
 
 def test_local_fallback_and_no_implicit_publication(client, monkeypatch):
@@ -43,7 +45,7 @@ def test_no_free_text_or_pii_and_explicit_consent(client, change):
 def test_scopes_and_owner_cache(client, monkeypatch):
     enable(client)
     seen = []
-    def fake(body, api_key):
+    def fake(body, settings):
         seen.append(body.model_dump())
         return ai.TestBody.model_validate(DRAFT)
     monkeypatch.setattr(ai, 'generate', fake)
@@ -67,13 +69,13 @@ def test_persistent_limit_and_failed_request_not_retried(client, monkeypatch):
     calls = []
     def fail(*args):
         calls.append(1)
-        raise httpx.ConnectError('secret upstream details must not leak')
+        raise llm.LLMError('unavailable')
     monkeypatch.setattr(ai, 'generate', fail)
     for _ in range(2):
         response = client.post(PREFIX + '/tests/ai-draft', headers=auth, json=BODY)
         assert response.json()['source'] == 'local' and 'upstream' not in response.text
     assert len(calls) == 1
-    monkeypatch.setattr(ai, 'LIFETIME_LIMIT', 1)
+    client.app.state.config.llm = replace(client.app.state.config.llm, total_limit=1, daily_limit=1, owner_daily_limit=1)
     assert client.post(PREFIX + '/tests/ai-draft', headers=auth, json={**BODY, 'level': 'middle'}).status_code == 429
 
 
@@ -83,9 +85,9 @@ def test_provider_fixed_origin_payload_limits_and_validation(monkeypatch, kind):
     calls = []
     def respond(request):
         calls.append(request)
-        assert str(request.url) == ai.ENDPOINT
+        assert str(request.url) == llm.CLOUDRU_URL + '/chat/completions'
         payload = json.loads(request.content)
-        assert payload['model'] == ai.MODEL and payload['max_tokens'] == 1000
+        assert payload['model'] == llm.CLOUDRU_MODEL and payload['max_tokens'] == 1000
         assert json.loads(payload['messages'][1]['content']) == {'skills': ['python', 'sql'], 'level': 'junior'}
         if kind == 'error': return httpx.Response(429)
         if kind == 'redirect': return httpx.Response(302, headers={'location': 'https://evil.test'})
@@ -96,15 +98,66 @@ def test_provider_fixed_origin_payload_limits_and_validation(monkeypatch, kind):
     def factory(**kwargs):
         assert kwargs['follow_redirects'] is False and kwargs['trust_env'] is False
         return real_client(**kwargs, transport=httpx.MockTransport(respond))
-    monkeypatch.setattr(ai.httpx, 'Client', factory)
+    monkeypatch.setattr(llm.httpx, 'Client', factory)
     body = ai.AiDraftBody.model_validate(BODY)
+    settings = llm.LLMSettings(provider='cloudru', base_url=llm.CLOUDRU_URL, model=llm.CLOUDRU_MODEL, api_key='synthetic-key')
     if kind == 'ok':
-        assert ai.generate(body, 'synthetic-key').title == DRAFT['title']
+        assert ai.generate(body, settings).title == DRAFT['title']
     else:
-        with pytest.raises(ValueError): ai.generate(body, 'synthetic-key')
+        with pytest.raises(ValueError): ai.generate(body, settings)
     assert len(calls) == 1
 
 
 def test_api_key_not_in_config_repr(client):
     enable(client)
     assert 'synthetic-runtime-key' not in repr(client.app.state.config)
+
+
+def test_status_is_free_scoped_and_cache_survives_exhaustion(client, monkeypatch):
+    enable(client)
+    client.app.state.config.llm = replace(client.app.state.config.llm, total_limit=1, daily_limit=1, owner_daily_limit=1)
+    auth = headers(client)
+    calls = []
+    def fake(*args):
+        calls.append(1)
+        return ai.TestBody.model_validate(DRAFT)
+    monkeypatch.setattr(ai, 'generate', fake)
+    path = PREFIX + '/tests/ai-status'
+    before = client.get(path, headers=auth).json()
+    assert before['available_requests'] == 1 and before['owner_requests_24h'] == 0
+    assert 'synthetic-runtime-key' not in json.dumps(before) and not calls
+    assert client.post(PREFIX + '/tests/ai-draft', headers=auth, json=BODY).status_code == 200
+    after = client.get(path, headers=auth).json()
+    assert after['available_requests'] == 0 and after['owner_requests_24h'] == 1
+    assert client.post(PREFIX + '/tests/ai-draft', headers=auth, json=BODY).json()['cached']
+    assert len(calls) == 1
+    other = headers(client, 'other')
+    assert client.get(path, headers=other).json()['owner_requests_24h'] == 0
+    reader = headers(client, 'readonly', ['tests:read'])
+    assert client.get(path, headers=reader).status_code == 403
+
+
+def test_cache_key_includes_model_provider_and_prompt_version(client, monkeypatch):
+    enable(client)
+    client.app.state.config.llm = replace(client.app.state.config.llm, owner_daily_limit=10)
+    auth = headers(client)
+    calls = []
+    def generate(*args):
+        calls.append(1)
+        return ai.TestBody.model_validate(DRAFT)
+    monkeypatch.setattr(ai, 'generate', generate)
+    path = PREFIX + '/tests/ai-draft'
+    for model in ('model-a', 'model-b'):
+        client.app.state.config.llm = replace(client.app.state.config.llm, model=model)
+        assert not client.post(path, headers=auth, json=BODY).json()['cached']
+        assert client.post(path, headers=auth, json=BODY).json()['cached']
+    client.app.state.config.llm = replace(client.app.state.config.llm, provider='deepseek', base_url=llm.PROVIDER_URLS['deepseek'])
+    assert client.post(path, headers=auth, json=BODY).json()['provider'] == 'deepseek'
+    monkeypatch.setattr(ai, 'PROMPT_VERSION', 'next-prompt')
+    assert not client.post(path, headers=auth, json=BODY).json()['cached']
+    assert len(calls) == 4
+
+
+def test_disabled_status_no_network(client):
+    status = client.get(PREFIX + '/tests/ai-status', headers=headers(client)).json()
+    assert not status['ready'] and status['available_requests'] == 0

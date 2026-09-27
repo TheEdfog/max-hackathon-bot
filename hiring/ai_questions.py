@@ -5,7 +5,6 @@ import re
 from datetime import timedelta
 from typing import Literal
 
-import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
@@ -14,14 +13,10 @@ from core.utils import normalize_skill
 from .assessments import TestBody
 from .db import AiTestDraft, now, serialize_writes
 from .matching import ALIASES
+from .llm import CLOUDRU_MODEL, LLMSettings, complete
 
-ENDPOINT = 'https://foundation-models.api.cloud.ru/v1/chat/completions'
-MODEL = 'ai-sage/GigaChat3-10B-A1.8B'
-MAX_COMPLETION_TOKENS = 1000
-GLOBAL_DAILY_LIMIT = 10
-OWNER_DAILY_LIMIT = 3
-LIFETIME_LIMIT = 50
-MAX_RESPONSE_BYTES = 65536
+PROMPT_VERSION = 'interview-questions-1'
+CACHE_HOURS = 24
 
 
 class AiDraftBody(BaseModel):
@@ -41,12 +36,43 @@ class AiDraftBody(BaseModel):
 
 class AiDraftResult(BaseModel):
     draft: TestBody
-    source: Literal['gigachat', 'local']
+    source: Literal['gigachat', 'llm', 'local']
+    provider: str | None = None
     model: str | None
     cached: bool
     review_required: Literal[True] = True
     published: Literal[False] = False
     notice: str
+
+
+class AiDraftStatus(BaseModel):
+    provider: str
+    model: str | None
+    ready: bool
+    owner_requests_24h: int
+    owner_limit_24h: int
+    available_requests: int
+    max_output_tokens: int
+    cache_hours: int = CACHE_HOURS
+    notice: str = 'Считаются запросы, включая неудачные. Это не баланс провайдера. Кэш не расходует запросы.'
+
+
+def request_counts(db, owner_id):
+    recent = AiTestDraft.created_at >= now() - timedelta(hours=CACHE_HOURS)
+    return db.execute(select(
+        func.count(AiTestDraft.id),
+        func.count(AiTestDraft.id).filter(recent),
+        func.count(AiTestDraft.id).filter(recent, AiTestDraft.owner_id == owner_id),
+    )).one()
+
+
+def draft_status(db, owner_id, settings):
+    total, daily, owner_daily = request_counts(db, owner_id)
+    available = max(0, min(settings.total_limit - total, settings.daily_limit - daily,
+                           settings.owner_daily_limit - owner_daily)) if settings.ready else 0
+    return AiDraftStatus(provider=settings.provider, model=settings.model or None, ready=settings.ready,
+                         owner_requests_24h=owner_daily, owner_limit_24h=settings.owner_daily_limit,
+                         available_requests=available, max_output_tokens=settings.max_tokens)
 
 
 def local_result(body, reason):
@@ -58,12 +84,10 @@ def local_result(body, reason):
                          notice=reason + ' Использован локальный шаблон. Проверьте и сохраните тест отдельно.')
 
 
-def generate(body, api_key):
+def generate(body: AiDraftBody, settings: LLMSettings) -> TestBody:
     # Only canonical labels and an enum leave this process. Never pass a job,
     # resume, profile, chat history, README or developer prompt to this function.
-    payload = {
-        'model': MODEL, 'max_tokens': MAX_COMPLETION_TOKENS, 'temperature': 0.3, 'top_p': 0.95,
-        'messages': [
+    messages = [
             {'role': 'system', 'content':
              'Ты готовишь профессиональные вопросы для первичного интервью. '
              'Верни только JSON с полями title и questions. questions: 1-3 объекта с text и rubric. '
@@ -72,22 +96,8 @@ def generate(body, api_key):
              'Без личных данных, возраста, пола, здоровья, национальности, религии, семейного положения. '
              'Без внешних ссылок, инструкций запуска кода и оценки кандидата. '
              'Критерии нужны только человеку для ручного обсуждения ответа.'},
-            {'role': 'user', 'content': json.dumps({'skills': body.skills, 'level': body.level}, ensure_ascii=False)}],
-    }
-    with httpx.Client(timeout=12, follow_redirects=False, trust_env=False) as client:
-        with client.stream('POST', ENDPOINT, headers={'Authorization': 'Bearer ' + api_key}, json=payload) as response:
-            if response.status_code != 200:
-                raise ValueError('Provider unavailable')
-            data = bytearray()
-            for chunk in response.iter_bytes():
-                data.extend(chunk)
-                if len(data) > MAX_RESPONSE_BYTES:
-                    raise ValueError('Response too large')
-    envelope = json.loads(data)
-    choice = envelope['choices'][0]
-    if choice.get('finish_reason') != 'stop':
-        raise ValueError('Incomplete draft')
-    content = choice['message']['content'].strip()
+            {'role': 'user', 'content': json.dumps({'skills': body.skills, 'level': body.level}, ensure_ascii=False)}]
+    content = complete(settings, messages)
     if content.startswith('```json') and content.endswith('```'):
         content = content[7:-3].strip()
     draft = TestBody.model_validate_json(content)
@@ -98,10 +108,14 @@ def generate(body, api_key):
 
 
 def create_draft(db, owner_id, body, config):
-    if not config.gigachat_enabled or not config.cloudru_api_key:
-        return local_result(body, 'GigaChat отключён или ключ не настроен.')
-    digest = hashlib.sha256((MODEL + body.model_dump_json()).encode()).hexdigest()
-    cutoff = now() - timedelta(hours=24)
+    settings = config.llm
+    settings.validate()
+    if not settings.ready:
+        return local_result(body, 'Внешняя модель отключена или ключ не настроен.')
+    cache_key = [PROMPT_VERSION, settings.provider, settings.base_url, settings.model,
+                 settings.max_tokens, body.model_dump()]
+    digest = hashlib.sha256(json.dumps(cache_key, sort_keys=True).encode()).hexdigest()
+    cutoff = now() - timedelta(hours=CACHE_HOURS)
     # End read-only authorization transaction, then serialize reservation. The
     # network request below never holds the SQLite write lock.
     db.rollback()
@@ -112,14 +126,10 @@ def create_draft(db, owner_id, body, config):
         status, result = recent.status, dict(recent.result)
         db.rollback()
         if status == 'ready':
-            return AiDraftResult(draft=TestBody.model_validate(result), source='gigachat', model=MODEL,
-                                 cached=True, notice='Кэш 24 часа. Проверьте и сохраните тест отдельно.')
+            return model_result(TestBody.model_validate(result), settings, cached=True)
         return local_result(body, 'Повторный внешний запрос для этого набора ограничен на 24 часа.')
-    total = db.scalar(select(func.count()).select_from(AiTestDraft))
-    daily = db.scalar(select(func.count()).select_from(AiTestDraft).where(AiTestDraft.created_at >= cutoff))
-    owner_daily = db.scalar(select(func.count()).select_from(AiTestDraft).where(
-        AiTestDraft.created_at >= cutoff, AiTestDraft.owner_id == owner_id))
-    if total >= LIFETIME_LIMIT or daily >= GLOBAL_DAILY_LIMIT or owner_daily >= OWNER_DAILY_LIMIT:
+    total, daily, owner_daily = request_counts(db, owner_id)
+    if total >= settings.total_limit or daily >= settings.daily_limit or owner_daily >= settings.owner_daily_limit:
         db.rollback()
         raise HTTPException(429, 'Лимит AI-черновиков. Создайте тест вручную. Автоповторов нет.')
     active = db.scalar(select(AiTestDraft.id).where(AiTestDraft.status == 'reserved',
@@ -132,14 +142,20 @@ def create_draft(db, owner_id, body, config):
     db.commit()
     identifier = row.id
     try:
-        draft = generate(body, config.cloudru_api_key)
-    except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError, AttributeError):
+        draft = generate(body, settings)
+    except ValueError:
         row = db.get(AiTestDraft, identifier)
         row.status = 'failed'
         db.commit()
-        return local_result(body, 'GigaChat не вернул проверяемый черновик.')
+        return local_result(body, 'Внешняя модель не вернула проверяемый черновик.')
     row = db.get(AiTestDraft, identifier)
     row.status, row.result = 'ready', draft.model_dump()
     db.commit()
-    return AiDraftResult(draft=draft, source='gigachat', model=MODEL, cached=False,
-                         notice='AI-черновик. Проверьте корректность и сохраните тест отдельно. Решение принимает человек.')
+    return model_result(draft, settings)
+
+
+def model_result(draft, settings, cached=False):
+    # Preserve the original API value for the previously supported model.
+    source = 'gigachat' if settings.provider == 'cloudru' and settings.model == CLOUDRU_MODEL else 'llm'
+    return AiDraftResult(draft=draft, source=source, provider=settings.provider, model=settings.model,
+                         cached=cached, notice='Проверьте черновик и сохраните тест отдельно. Решение принимает человек.')

@@ -1,7 +1,10 @@
 name: rezumit-hiring
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: api
+    # Model/provider/budget settings come from this private runtime file.
     env_file: .env.hiring
     environment:
       HIRING_DATABASE_URL: sqlite:////app/data/hiring.db

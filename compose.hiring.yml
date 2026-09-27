@@ -2,16 +2,17 @@ services:
   bot:
     build:
       context: .
-      dockerfile: Dockerfile
+      target: polling
     env_file: .env.hiring
     volumes:
       - hiring-data:/app/data
     restart: unless-stopped
+    init: true
+    stop_grace_period: 25s
     read_only: true
     tmpfs: [/tmp:size=64m]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    command: ["python", "-m", "hiring.polling"]
     # Local test mode: no public inbound ports, no web UI required.
 volumes:
   hiring-data:

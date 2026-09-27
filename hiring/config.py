@@ -2,28 +2,29 @@ import os
 import secrets
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
+from .llm import LLMSettings
 
 
 @dataclass
 class Config:
     database_url: str = field(default_factory=lambda: os.getenv("HIRING_DATABASE_URL", "sqlite:///data/hiring.db"))
-    secret: str = field(default_factory=lambda: os.getenv("HIRING_SECRET", ""))
+    secret: str = field(default_factory=lambda: os.getenv("HIRING_SECRET", ""), repr=False)
     production: bool = field(default_factory=lambda: os.getenv("HIRING_ENV", "development") == "production")
     demo: bool = field(default_factory=lambda: os.getenv("HIRING_DEMO", "true").lower() == "true")
-    employer_code: str = field(default_factory=lambda: os.getenv("HIRING_EMPLOYER_CODE", ""))
-    bot_token: str = field(default_factory=lambda: os.getenv("MAX_BOT_TOKEN", ""))
+    employer_code: str = field(default_factory=lambda: os.getenv("HIRING_EMPLOYER_CODE", ""), repr=False)
+    bot_token: str = field(default_factory=lambda: os.getenv("MAX_BOT_TOKEN", ""), repr=False)
     bot_name: str = field(default_factory=lambda: os.getenv("MAX_BOT_NAME", ""))
-    webhook_secret: str = field(default_factory=lambda: os.getenv("MAX_WEBHOOK_SECRET", ""))
+    webhook_secret: str = field(default_factory=lambda: os.getenv("MAX_WEBHOOK_SECRET", ""), repr=False)
     max_api_url: str = field(default_factory=lambda: os.getenv("MAX_API_URL", "https://platform-api2.max.ru"))
     public_url: str = field(default_factory=lambda: os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/"))
     worker: bool = field(default_factory=lambda: os.getenv('HIRING_WORKER', 'true').lower() == 'true')
-    gigachat_enabled: bool = field(default_factory=lambda: os.getenv('HIRING_GIGACHAT_ENABLED', 'false').lower() == 'true')
-    cloudru_api_key: str = field(default_factory=lambda: os.getenv('CLOUDRU_API_KEY', ''), repr=False)
+    llm: LLMSettings = field(default_factory=LLMSettings.from_env)
     # CLI-only opt-in; never enabled by the ordinary production environment file.
     sandbox: bool = False
     sandbox_users: tuple[str, ...] = ()
 
     def validate(self):
+        self.llm.validate()
         if self.sandbox:
             from sqlalchemy.engine import make_url
             database = make_url(self.database_url)

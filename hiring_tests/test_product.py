@@ -145,11 +145,10 @@ def test_max_bot_persistent_dialog_and_deduplication(client):
     # No messages are actually sent by the test (worker=False).
 
 
-def test_local_extraction_demo_and_pdf_errors(client):
-    demo = client.post("/api/auth/demo").json()
-    headers = {"Authorization": "Bearer " + demo["token"]}
-    assert demo["user"]["demo"] is True
-    assert client.get("/api/metrics", headers=headers).json()["applications"] == 3
+def test_local_extraction_and_pdf_errors(client):
+    headers = register(client, 'parser', 'employer')
+    assert client.post('/api/auth/demo').status_code == 404
+    assert client.get('/assets/app.js').status_code == 404
     result = client.post("/api/requirements/extract", headers=headers, json={"text": "Требуется Python разработчик. Обязательно PostgreSQL. Будет плюсом Docker."})
     assert result.status_code == 200 and len(result.json()["requirements"]) >= 2
     assert client.post("/api/resume/extract", headers=headers, files={"file": ("cv.pdf", b"not pdf", "application/pdf")}).status_code == 422

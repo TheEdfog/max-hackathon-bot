@@ -4,109 +4,22 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
 
 import jwt
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .bot import process_event, start_worker
+from .api_models import (ActiveBody, AnswersBody, ApplicationBody, EmployerBody, InviteBody, JobBody, Login,
+                         MaxBody, Registration, TextBody)
 from .config import Config
 from .db import Application, Audit, Job, Outbox, User, connect, serialize_writes
 from .matching import extract
 from .security import check_password, hash_password, max_identity, token_for
 from .services import answer, application_view, confirm, invite, owned_job, submit, withdraw_application
-
-ROOT = Path(__file__).resolve().parent
-
-
-class Login(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
-
-
-class Registration(Login):
-    name: str = Field(min_length=2, max_length=160)
-    company: str = Field(default="", max_length=160)
-    role: Literal["employer", "candidate"] = "candidate"
-    code: str = Field(default="", max_length=200)
-
-
-class TextBody(BaseModel):
-    text: str = Field(min_length=20, max_length=20000)
-
-
-class Requirement(BaseModel):
-    id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,40}$")
-    skill: str = Field(min_length=1, max_length=100)
-    label: str = Field(min_length=1, max_length=120)
-    type: Literal["must", "nice"] = "must"
-    source: str = Field(default="", max_length=700)
-
-    @field_validator('id')
-    @classmethod
-    def reserved_ids(cls, value):
-        if value.startswith(('screen_', 'test_')):
-            raise ValueError('screen_ and test_ are reserved for interview questions')
-        return value
-
-
-class JobBody(BaseModel):
-    title: str = Field(min_length=3, max_length=160)
-    description: str = Field(min_length=30, max_length=20000)
-    terms: str = Field(default="", max_length=500)
-    requirements: list[Requirement] = Field(min_length=1, max_length=15)
-    screening_questions: list[Literal['screen_motivation', 'screen_conditions', 'screen_availability']] = Field(default_factory=list, max_length=3)
-
-    @field_validator('screening_questions')
-    @classmethod
-    def unique_screening(cls, value):
-        if len(set(value)) != len(value):
-            raise ValueError('Вопросы не должны повторяться')
-        return value
-
-    @field_validator("requirements")
-    @classmethod
-    def unique_requirements(cls, value):
-        from core.utils import normalize_skill
-        if len({r.id for r in value}) != len(value) or len({normalize_skill(r.skill) for r in value}) != len(value):
-            raise ValueError("Требования не должны повторяться")
-        return value
-
-
-class ApplicationBody(BaseModel):
-    resume: str = Field(min_length=40, max_length=20000)
-    consent: Literal[True]
-    name: str = Field(min_length=2, max_length=160)
-
-    @field_validator('name', 'resume', mode='before')
-    @classmethod
-    def strip_text(cls, value):
-        return value.strip() if isinstance(value, str) else value
-
-
-class AnswersBody(BaseModel):
-    answers: dict[str, str] = Field(max_length=9)
-
-    @field_validator("answers")
-    @classmethod
-    def lengths(cls, value):
-        if any(not 2 <= len(v.strip()) <= 2500 for v in value.values()):
-            raise ValueError("Ответы: от 2 до 2500 символов")
-        return {k: v.strip() for k, v in value.items()}
-
-
-class InviteBody(BaseModel):
-    message: str = Field(min_length=10, max_length=1500)
-
-
-class MaxBody(BaseModel):
-    init_data: str = Field(min_length=1, max_length=16000)
 
 
 def create_app(config=None):
@@ -127,7 +40,7 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.5.0", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.6.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
 
@@ -272,10 +185,6 @@ def create_app(config=None):
     def me(user=Depends(current)):
         return user_view(user)
 
-    class EmployerBody(BaseModel):
-        company: str = Field(min_length=2, max_length=160)
-        code: str = Field(default="", max_length=200)
-
     @app.post("/api/me/employer")
     def enable_employer(body: EmployerBody, user=Depends(current), db=Depends(db_session)):
         serialize_writes(db)
@@ -306,9 +215,6 @@ def create_app(config=None):
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str, user=Depends(employer), db=Depends(db_session)):
         return job_view(db, owned_job(db, job_id, user))
-
-    class ActiveBody(BaseModel):
-        active: bool
 
     @app.patch("/api/jobs/{job_id}")
     def set_active(job_id: str, body: ActiveBody, user=Depends(employer), db=Depends(db_session)):
@@ -445,23 +351,22 @@ def create_app(config=None):
         await run_in_threadpool(process_event, factory, data, config)
         return {"ok": True}
 
-    @app.post("/api/auth/demo")
-    def demo(db=Depends(db_session)):
-        if not config.demo:
-            raise HTTPException(404)
-        from .seed import seed
-        user = seed(db)
-        return auth_response(user)
-
     from .integrations import install_routes
     install_routes(app, config, db_session, employer, job_view)
-    app.mount("/assets", StaticFiles(directory=str(ROOT / "static")), name="assets")
 
-    @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str):
-        if path.startswith("api/"):
-            raise HTTPException(404)
-        return FileResponse(ROOT / "static" / "index.html")
+    @app.get('/', include_in_schema=False)
+    def index():
+        return {'service': app.title, 'channel': 'MAX', 'docs': '/docs',
+                'bot_url': f'https://max.ru/{config.bot_name}' if config.bot_name else None}
+
+    @app.get('/apply/{job_id}', include_in_schema=False)
+    def open_vacancy(job_id: str, db=Depends(db_session)):
+        job = db.get(Job, job_id)
+        if not job or not job.active:
+            raise HTTPException(404, 'Вакансия не найдена или закрыта')
+        if not config.bot_name:
+            raise HTTPException(503, 'Ссылка MAX ещё не настроена')
+        return RedirectResponse(f'https://max.ru/{config.bot_name}?start=apply_{job.id}', status_code=307)
 
     return app
 

@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from .assessments import TestBody, attach_test, create_test, owned_test, test_view
-from .ai_questions import AiDraftBody, AiDraftResult, create_draft
+from .ai_questions import AiDraftBody, AiDraftResult, AiDraftStatus, create_draft, draft_status
 from .db import ApplicationReview, AssessmentTemplate, IntegrationEvent, ResumeDocument, serialize_writes
 from .matching import evidence, extract
 from .pdf_extract import MAX_BYTES, extract_pdf
@@ -263,6 +263,10 @@ def install_talent_routes(router, require, db_session, owned_application):
     @router.post('/tests/ai-draft', response_model=AiDraftResult)
     def ai_draft(body: AiDraftBody, request: Request, identity=Depends(require('tests:write')), db=Depends(db_session)):
         return create_draft(db, identity[1].id, body, request.app.state.config)
+
+    @router.get('/tests/ai-status', response_model=AiDraftStatus)
+    def ai_status(request: Request, identity=Depends(require('tests:write')), db=Depends(db_session)):
+        return draft_status(db, identity[1].id, request.app.state.config.llm)
 
     @router.get('/tests/{test_id}', response_model=TestInfo)
     def get_test(test_id: str, identity=Depends(require('tests:read')), db=Depends(db_session)):

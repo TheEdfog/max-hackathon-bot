@@ -164,7 +164,7 @@ def issue_key(db, owner, body):
 
 
 def install_routes(app, config, db_session, employer, job_view):
-    from .main import JobBody, InviteBody
+    from .api_models import JobBody, InviteBody
     from .talent_api import ReviewStage, install_talent_routes
 
     class JobPut(JobBody):
