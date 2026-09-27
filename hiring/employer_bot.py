@@ -2,7 +2,7 @@
 import hmac
 from datetime import timezone, timedelta
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from .db import Application, BotAttempt, Job, User, now
 from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract
@@ -57,9 +57,17 @@ def handle_employer(db, user, session, text, config, reply):
         return True
     if user.role != "employer":
         return False
+    if command in ('/jobs', '/job', '/candidates', '/view', '/resume', '/evidence', '/metrics') and state.get('step') == 'invite_message':
+        session.state = {}
     if command == "/newjob":
         session.state = {"step": "job_title"}
         reply("Создадим вакансию. Как называется должность? Например: Junior Python-разработчик.\n/cancel — отмена.")
+    elif command == '/metrics':
+        counts = dict(db.execute(select(Application.status, func.count()).join(Job).where(
+            Job.owner_id == user.id, Application.status != 'withdrawn').group_by(Application.status)).all())
+        jobs = db.scalar(select(func.count()).select_from(Job).where(Job.owner_id == user.id, Job.active == True))
+        reply(f"Сводка · {user.company}\n\nОткрытых вакансий: {jobs}\nОткликов: {sum(counts.values())}\nУточняют сведения: {counts.get('clarifying', 0)}\nЖдут вашего решения: {counts.get('ready', 0)}\nПриглашены, ждём ответа: {counts.get('invited', 0)}\nПодтвердили интерес: {counts.get('confirmed', 0)}\n\nЭто фактические статусы, не оценка качества кандидатов. Отозванные отклики не учитываются.",
+              [('Мои вакансии', '/jobs'), ('Новая вакансия', '/newjob'), ('Меню', '/help')])
     elif command == "/jobs":
         page = page_number(text.partition(' ')[2])
         rows = list(db.scalars(select(Job).where(Job.owner_id == user.id).order_by(Job.created_at.desc(), Job.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))

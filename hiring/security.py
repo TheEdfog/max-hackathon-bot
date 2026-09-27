@@ -34,7 +34,7 @@ def max_identity(data, token):
     key = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
     message = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
     expected = hmac.new(key, message.encode(), hashlib.sha256).hexdigest()
-    if not token or not hmac.compare_digest(received, expected):
+    if not token or not hmac.compare_digest(received.encode(), expected.encode()):
         raise ValueError("Invalid MAX signature")
     age = time.time() - int(fields.get("auth_date", 0))
     if not -30 <= age <= 3600:

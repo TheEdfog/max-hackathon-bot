@@ -6,6 +6,7 @@ from sqlalchemy import select
 from .chat_ui import PAGE_SIZE, consume_action, page_number, queue_message
 from .db import Application, BotEvent, BotSession, Job, Outbox, User, serialize_writes
 from .employer_bot import handle_employer
+from .demo_bot import handle_demo
 from .outbox import start_worker
 from .services import answer, confirm, submit, withdraw_application
 
@@ -63,6 +64,14 @@ def handle_update(db, event, config):
         queue_message(db, user, value, buttons or [('Меню', '/help'), ('Отмена', '/cancel')],
                       application_id, dict(session.state) if bind else None)
 
+    def ask_question(app, prefix=''):
+        pending = [q for q in app.questions if not app.answers.get(q['id'])]
+        session.state = {'step': 'answer', 'application_id': app.id, 'question_id': pending[0]['id']}
+        number = len(app.questions) - len(pending) + 1
+        reply(f'{prefix}Уточнение {number} из {len(app.questions)}\n\n{pending[0]["text"]}\n\nМожно ответить текстом или выбрать кнопку. Пропуск не означает отсутствия опыта.',
+              [('Опыта нет', 'Опыта нет.'), ('Пропустить вопрос', 'Пропускаю уточнение, сведений недостаточно.'), ('Отмена', '/cancel')],
+              application_id=app.id, bind=True)
+
     if kind == 'message_callback':
         db.add(Outbox(max_id=max_id, callback_id=callback['callback_id'], body={}))
         text = consume_action(db, user, session, callback.get('payload'))
@@ -71,6 +80,9 @@ def handle_update(db, event, config):
             return
     state = dict(session.state)
     command = text.split(maxsplit=1)[0] if text else ''
+    if handle_demo(session, text, reply):
+        return
+    state = dict(session.state)
     if command == '/cancel':
         session.state = {}
         reply('Текущий шаг отменён. Сохранённые вакансии и отклики не изменились.')
@@ -79,9 +91,13 @@ def handle_update(db, event, config):
         if text == '/privacy':
             reply('Тестовая версия: используйте вымышленные данные. Компания из вакансии увидит имя, опыт и ответы. MAX ID нужен для уведомлений. Сведения хранятся на сервере бота, во внешнюю языковую модель не передаются. Решение принимает человек. Не присылайте паспорт и чувствительные сведения. Отзыв через «Мои отклики» очищает тексты в базе откликов и серверной очереди. Уже доставленные сообщения MAX и резервные копии этим не удаляются. Сроки и очистка тестового стенда описаны в регламенте проекта.', [('Мои отклики', '/status'), ('Меню', '/help')])
         elif user.role == 'employer':
-            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
+            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Сводка откликов', '/metrics'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         else:
-            reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия — используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
+            reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия — используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
+        return
+    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue'}
+    if command.startswith('/') and command not in known_commands:
+        reply('Команда не распознана. Откройте меню или продолжите текущий шаг обычным сообщением.')
         return
     if handle_employer(db, user, session, text, config, reply):
         return
@@ -127,7 +143,7 @@ def handle_update(db, event, config):
             pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:
                 session.state = {'step': 'answer', 'application_id': app.id}
-                reply(pending[0]['text'], application_id=app.id)
+                ask_question(app)
         else:
             buttons = []
             if app.status == 'clarifying':
@@ -170,7 +186,7 @@ def handle_update(db, event, config):
                 pending = [q for q in app.questions if not app.answers.get(q['id'])]
                 if pending and app.status == 'clarifying':
                     session.state = {'step': 'answer', 'application_id': app.id}
-                    reply('Отклик сохранён. Уточним детали.\n\n' + pending[0]['text'], application_id=app.id)
+                    ask_question(app, 'Отклик сохранён.\n\n')
                 else:
                     session.state = {}
                     reply('Отклик сохранён и доступен работодателю.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
@@ -187,7 +203,7 @@ def handle_update(db, event, config):
                 answer(db, app, {pending[0]['id']: text})
             pending = [q for q in app.questions if not app.answers.get(q['id'])]
             if pending:
-                reply(pending[0]['text'], application_id=app.id)
+                ask_question(app)
             else:
                 session.state = {}
                 reply('Спасибо! Ответы сохранены, уведомление работодателю поставлено в очередь.', [('Мои отклики', '/status')], application_id=app.id)

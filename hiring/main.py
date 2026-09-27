@@ -1,5 +1,4 @@
 import hmac
-import io
 import secrets
 import time
 from collections import defaultdict, deque
@@ -69,6 +68,11 @@ class ApplicationBody(BaseModel):
     consent: Literal[True]
     name: str = Field(min_length=2, max_length=160)
 
+    @field_validator('name', 'resume', mode='before')
+    @classmethod
+    def strip_text(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
 
 class AnswersBody(BaseModel):
     answers: dict[str, str] = Field(max_length=3)
@@ -131,7 +135,7 @@ def create_app(config=None):
                     return JSONResponse({'detail': 'Слишком большой запрос'}, 413)
                 chunks.append(chunk)
             request._body = b''.join(chunks)  # Starlette cached request reused by call_next.
-        if request.url.path.startswith("/api/auth"):
+        if request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer':
             key = request.client.host if request.client else "unknown"
             if len(buckets) > 10000:
                 buckets.clear()
@@ -254,7 +258,8 @@ def create_app(config=None):
 
     @app.post("/api/me/employer")
     def enable_employer(body: EmployerBody, user=Depends(current), db=Depends(db_session)):
-        if config.employer_code and not hmac.compare_digest(body.code, config.employer_code):
+        serialize_writes(db)
+        if config.employer_code and not hmac.compare_digest(body.code.encode(), config.employer_code.encode()):
             raise HTTPException(403, "Неверный код работодателя")
         if db.scalar(select(Application).where(Application.user_id == user.id)):
             raise HTTPException(409, "У вас уже есть отклики кандидата. Используйте отдельный аккаунт работодателя.")
@@ -286,6 +291,7 @@ def create_app(config=None):
 
     @app.patch("/api/jobs/{job_id}")
     def set_active(job_id: str, body: ActiveBody, user=Depends(employer), db=Depends(db_session)):
+        serialize_writes(db)
         job = owned_job(db, job_id, user)
         job.active = body.active
         db.commit()
@@ -308,19 +314,15 @@ def create_app(config=None):
         if not raw.startswith(b"%PDF"):
             raise HTTPException(422, "Загрузите PDF с текстовым слоем")
         try:
-            from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(raw))
-            if reader.is_encrypted or len(reader.pages) > 10:
-                raise ValueError()
-            result = "\n".join(page.extract_text() or "" for page in reader.pages)[:20000]
-            if len(result.strip()) < 40:
-                raise ValueError()
-        except Exception:
+            from .pdf_extract import extract_pdf
+            result = extract_pdf(raw)
+        except ValueError:
             raise HTTPException(422, "Не удалось прочитать текст. Вставьте его вручную; сканы и защищённые PDF не поддерживаются.")
         return {"text": result}
 
     @app.post("/api/jobs/{job_id}/apply", status_code=201)
     def apply(job_id: str, body: ApplicationBody, user=Depends(current), db=Depends(db_session)):
+        serialize_writes(db)
         job = db.get(Job, job_id)
         if not job:
             raise HTTPException(404, "Вакансия не найдена")
@@ -352,12 +354,14 @@ def create_app(config=None):
 
     @app.post("/api/applications/{app_id}/answers")
     def save_answers(app_id: str, body: AnswersBody, user=Depends(current), db=Depends(db_session)):
+        serialize_writes(db)
         row = answer(db, own_application(db, app_id, user), body.answers)
         db.commit()
         return application_view(db, row)
 
     @app.post("/api/applications/{app_id}/invite")
     def invite_candidate(app_id: str, body: InviteBody, user=Depends(employer), db=Depends(db_session)):
+        serialize_writes(db)
         row = db.get(Application, app_id)
         if not row:
             raise HTTPException(404, "Отклик не найден")
@@ -368,6 +372,7 @@ def create_app(config=None):
 
     @app.post("/api/applications/{app_id}/confirm")
     def confirm_invitation(app_id: str, user=Depends(current), db=Depends(db_session)):
+        serialize_writes(db)
         row = confirm(db, own_application(db, app_id, user))
         db.commit()
         return application_view(db, row)
@@ -387,7 +392,7 @@ def create_app(config=None):
 
     @app.post("/api/max/webhook")
     async def webhook(request: Request):
-        if not config.webhook_secret or not hmac.compare_digest(request.headers.get("x-max-bot-api-secret", ""), config.webhook_secret):
+        if not config.webhook_secret or not hmac.compare_digest(request.headers.get("x-max-bot-api-secret", "").encode(), config.webhook_secret.encode()):
             raise HTTPException(403, "Недействительная подпись webhook")
         try:
             data = await request.json()

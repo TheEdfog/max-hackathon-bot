@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import httpx
@@ -15,6 +16,7 @@ from .config import Config
 from .db import Base, connect
 from .bot import process_event, start_worker
 from .max_client import tls_context
+from .runtime_lock import polling_lock
 
 
 class PollCursor(Base):
@@ -36,7 +38,7 @@ def main():
         raise SystemExit("Production requires webhook, not polling")
     # HTTP debug logging may contain request headers. Never enable it here.
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    with httpx.Client(base_url=config.max_api_url, headers={"Authorization": config.bot_token}, verify=tls_context(config.max_api_url), timeout=40) as api:
+    with (nullcontext() if args.check else polling_lock(config.database_url)), httpx.Client(base_url=config.max_api_url, headers={"Authorization": config.bot_token}, verify=tls_context(config.max_api_url), timeout=40) as api:
         info = api.get("/me")
         if info.status_code != 200:
             raise SystemExit(f"MAX /me HTTP {info.status_code}: check token (never printed)")
