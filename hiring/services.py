@@ -3,6 +3,7 @@ from sqlalchemy import select
 from .db import Application, Audit, BotSession, Job, Outbox, User
 from .chat_ui import queue_message
 from .matching import evidence, questions
+from .sandbox import destination
 
 
 def notify(db, user, text, application_id=None, buttons=None):
@@ -93,7 +94,7 @@ def withdraw_application(db, app):
         return app
     owner = db.get(User, db.get(Job, app.job_id).owner_id)
     candidate = db.get(User, app.user_id)
-    recipients = [u.max_id for u in (owner, candidate) if u.max_id]
+    recipients = [destination(u) for u in (owner, candidate) if u.max_id]
     for row in db.scalars(select(Outbox).where(
             (Outbox.application_id == app.id) |
             # Pre-v2 messages have no association: conservatively clear legacy recipient copies.

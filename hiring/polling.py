@@ -17,6 +17,7 @@ from .db import Base, connect
 from .bot import process_event, start_worker
 from .max_client import tls_context
 from .runtime_lock import polling_lock
+from .sandbox import check_storage
 
 
 class PollCursor(Base):
@@ -28,9 +29,16 @@ class PollCursor(Base):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="Check token and subscriptions, do not consume events")
+    parser.add_argument('--sandbox', action='store_true', help='Use isolated data/hiring.sandbox.db with virtual test personas')
+    parser.add_argument('--test-user', action='append', default=[], help='Allowlisted physical MAX user ID; repeat for another tester')
     args = parser.parse_args()
     load_dotenv(".env.hiring")
     config = Config()
+    if args.test_user and not args.sandbox:
+        parser.error('--test-user requires --sandbox')
+    if args.sandbox:
+        config.sandbox, config.sandbox_users = True, tuple(args.test_user)
+        config.database_url = 'sqlite:///data/hiring.sandbox.db'
     config.validate()
     if not config.bot_token:
         raise SystemExit("Set MAX_BOT_TOKEN in .env.hiring")
@@ -56,8 +64,12 @@ def main():
             raise SystemExit("Set HIRING_EMPLOYER_CODE before starting polling")
         Path("data").mkdir(exist_ok=True)
         engine, factory = connect(config.database_url)
+        if config.sandbox:
+            check_storage(factory)
         worker = start_worker(factory, config)
         print("MAX polling started; waiting for /start. Keep this process running.", flush=True)
+        if config.sandbox:
+            print('SANDBOX ONLY: allowlisted testers must send /test. Other users are ignored; normal database is not used.', flush=True)
         try:
             while True:
                 with factory() as db:

@@ -4,11 +4,12 @@ import json
 from fastapi import HTTPException
 from sqlalchemy import select
 from .chat_ui import PAGE_SIZE, consume_action, page_number, queue_message
-from .db import Application, BotEvent, BotSession, Job, Outbox, User, serialize_writes
+from .db import Application, BotEvent, BotSession, Job, Outbox, SandboxSwitch, User, serialize_writes
 from .employer_bot import handle_employer
 from .demo_bot import handle_demo
 from .outbox import start_worker
 from .services import answer, confirm, submit, withdraw_application
+from .sandbox import PERSONAS, actor
 
 STATUS = {'clarifying': 'ждём уточнений', 'ready': 'у работодателя', 'invited': 'приглашение',
           'confirmed': 'интерес подтверждён', 'withdrawn': 'отозван'}
@@ -45,20 +46,34 @@ def handle_update(db, event, config):
     if not parsed:
         return
     kind, identity, max_id, text, callback, digest = parsed
+    if config.sandbox and max_id not in config.sandbox_users:
+        return
     if db.get(BotEvent, digest):
         return
     db.add(BotEvent(id=digest))
     db.flush()
-    user = db.scalar(select(User).where(User.max_id == max_id))
-    if not user:
-        name = identity.get('name') or identity.get('first_name') or 'Кандидат'
-        user = User(max_id=max_id, name=name[:160] if isinstance(name, str) else 'Кандидат', role='candidate')
-        db.add(user)
-        db.flush()
-    session = db.get(BotSession, user.id)
-    if not session:
-        session = BotSession(user_id=user.id, state={})
-        db.add(session)
+    if text == '/whoami':
+        db.add(Outbox(max_id=max_id, body={'text': 'Ваш MAX ID для настройки локального теста: ' + max_id}))
+        return
+    if config.sandbox:
+        switch = db.get(SandboxSwitch, max_id)
+        if not switch:
+            if kind != 'message_created' or text != '/test':
+                return  # No replay of old production messages into a new sandbox.
+            switch = SandboxSwitch(max_id=max_id, persona='e')
+            db.add(switch)
+        user, session = actor(db, max_id, switch.persona)
+    else:
+        user = db.scalar(select(User).where(User.max_id == max_id))
+        if not user:
+            name = identity.get('name') or identity.get('first_name') or 'Кандидат'
+            user = User(max_id=max_id, name=name[:160] if isinstance(name, str) else 'Кандидат', role='candidate')
+            db.add(user)
+            db.flush()
+        session = db.get(BotSession, user.id)
+        if not session:
+            session = BotSession(user_id=user.id, state={})
+            db.add(session)
 
     def reply(value, buttons=None, application_id=None, bind=False):
         queue_message(db, user, value, buttons or [('Меню', '/help'), ('Отмена', '/cancel')],
@@ -80,6 +95,24 @@ def handle_update(db, event, config):
             return
     state = dict(session.state)
     command = text.split(maxsplit=1)[0] if text else ''
+    if config.sandbox and command == '/test':
+        selected = text.partition(' ')[2].strip()
+        if selected:
+            if selected not in PERSONAS:
+                reply('Неизвестная тестовая роль.')
+                return
+            switch.persona = selected
+            user, session = actor(db, max_id, selected)
+        role_buttons = [(label, '/test ' + key) for key, (label, _, _) in PERSONAS.items() if key != switch.persona]
+        reply('Изолированный тест: один MAX-аккаунт, разные пользователи бэкенда.\n'
+              'Используйте только вымышленные данные. Вакансии и отклики сохраняются в отдельной базе.\n'
+              'Черновики каждой роли сохраняются. Старые кнопки другой роли не сработают.\n\n'
+              'Текущий шаг: ' + str(session.state.get('step', 'меню')),
+              [('Меню текущей роли', '/help')] + role_buttons)
+        return
+    if config.sandbox and command == '/employer':
+        reply('В тесте выберите готовую роль работодателя через «Тестовые роли». Настоящая регистрация проверяется вне тестового режима.')
+        return
     if handle_demo(session, text, reply):
         return
     state = dict(session.state)
@@ -214,7 +247,11 @@ def handle_update(db, event, config):
 def process_event(factory, event, config):
     if not valid_event(event):
         return
+    if config.sandbox:
+        config.validate()
     with factory() as db:
+        if config.sandbox and not (db.bind.url.database or '').endswith('.sandbox.db'):
+            raise ValueError('Refusing to route sandbox events to normal storage')
         serialize_writes(db)
         handle_update(db, event, config)
         # Unexpected integrity/storage errors fail the webhook so MAX can retry.

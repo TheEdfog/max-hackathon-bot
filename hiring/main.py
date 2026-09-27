@@ -96,6 +96,8 @@ class MaxBody(BaseModel):
 def create_app(config=None):
     config = config or Config()
     config.validate()
+    if config.sandbox:
+        raise ValueError('Sandbox personas are supported only by the local polling launcher, not the public API')
     if config.database_url.startswith("sqlite:///data/"):
         Path("data").mkdir(exist_ok=True)
     engine, factory = connect(config.database_url)

@@ -105,6 +105,12 @@ class BotAttempt(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class SandboxSwitch(Base):
+    __tablename__ = 'hiring_sandbox_switches'
+    max_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    persona: Mapped[str] = mapped_column(String(1), default='e')
+
+
 def connect(url):
     kwargs = {"connect_args": {"check_same_thread": False, "timeout": 20}} if url.startswith("sqlite") else {}
     engine = create_engine(url, **kwargs)
