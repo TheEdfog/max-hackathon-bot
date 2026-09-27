@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Профиль</span>
+        <h2>Профиль кандидата</h2>
+        <p>
+            Здесь хранится всё, что можно использовать для отклика: опыт, проекты, навыки,
+            образование и достижения. При анализе вакансии РезюмИТ выберет только релевантное.
+        </p>
+    </div>
+    <div class="page-actions">
+        {% if profile %}
+            <a href="/profiles/{{ profile.id }}" class="btn btn-secondary">Редактировать</a>
+            <a href="/vacancies" class="btn btn-primary">К вакансиям</a>
+        {% else %}
+            <a href="/profiles/create" class="btn btn-primary">Заполнить профиль</a>
+        {% endif %}
+    </div>
+</section>
+
+{% if profile %}
+    <section class="card entity-card">
+        <div class="entity-card-header">
+            <div>
+                <h3>{{ profile.full_name }}</h3>
+                <p>
+                    {{ profile.target_position }}
+                    {% if profile.city %} · {{ profile.city }}{% endif %}
+                    {% if profile.work_format %} · {{ profile.work_format }}{% endif %}
+                </p>
+            </div>
+        </div>
+
+        <div class="entity-meta-list">
+            <div><strong>Email:</strong> {{ profile.email }}</div>
+            <div><strong>Телефон:</strong> {{ profile.phone }}</div>
+            {% if profile.salary_expectation %}<div><strong>Ожидания:</strong> {{ profile.salary_expectation }}</div>{% endif %}
+            {% if profile.github_url %}<div><strong>GitHub:</strong> <a href="{{ profile.github_url }}" target="_blank">{{ profile.github_url }}</a></div>{% endif %}
+            {% if profile.linkedin_url %}<div><strong>LinkedIn:</strong> <a href="{{ profile.linkedin_url }}" target="_blank">{{ profile.linkedin_url }}</a></div>{% endif %}
+        </div>
+
+        {% if profile.summary_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">О себе</span>
+                <p>{{ profile.summary_text }}</p>
+            </div>
+        {% endif %}
+
+        <div class="entity-block">
+            <span class="entity-block-title">Навыки и компетенции</span>
+            {% if profile_key_skills %}
+                <div class="skill-tags">
+                    {% for skill in profile_key_skills %}
+                        <span class="skill-chip">{{ skill.skill_norm }}</span>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="muted-text">Навыки пока не указаны.</p>
+            {% endif %}
+        </div>
+
+        {% if profile.experience_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">Опыт</span>
+                <div class="text-preview">{{ profile.experience_text }}</div>
+            </div>
+        {% endif %}
+
+        {% if profile.projects_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">Проекты</span>
+                <div class="text-preview">{{ profile.projects_text }}</div>
+            </div>
+        {% endif %}
+
+        {% if profile.education_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">Образование</span>
+                <div class="text-preview">{{ profile.education_text }}</div>
+            </div>
+        {% endif %}
+
+        {% if profile.certificates_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">Курсы и сертификаты</span>
+                <div class="text-preview">{{ profile.certificates_text }}</div>
+            </div>
+        {% endif %}
+
+        {% if profile.languages_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">Языки</span>
+                <div class="text-preview">{{ profile.languages_text }}</div>
+            </div>
+        {% endif %}
+
+        {% if profile.soft_skills_text %}
+            <div class="entity-block">
+                <span class="entity-block-title">Soft skills</span>
+                <div class="text-preview">{{ profile.soft_skills_text }}</div>
+            </div>
+        {% endif %}
+
+        <div class="danger-zone">
+            <div>
+                <strong>Удаление профиля</strong>
+                <p>Если хотите заполнить анкету заново, можно удалить данные профиля. Вакансии останутся, а документы, созданные по этому профилю, будут удалены.</p>
+            </div>
+            <form
+                action="/profiles/{{ profile.id }}/delete"
+                method="post"
+                class="inline-form"
+                onsubmit="return confirm('Удалить профиль кандидата? Вакансии останутся, но документы, созданные по этому профилю, будут удалены.');"
+            >
+                <button type="submit" class="btn btn-danger">Удалить профиль</button>
+            </form>
+        </div>
+    </section>
+{% else %}
+    <section class="card empty-state-card">
+        <h3>Профиль пока не заполнен</h3>
+        <p>
+            Заполните ФИО, целевую позицию, навыки, опыт и проекты. Учебные проекты можно указывать:
+            для начинающего специалиста это нормальное подтверждение практики.
+        </p>
+        <a href="/profiles/create" class="btn btn-primary">Заполнить профиль</a>
+    </section>
+{% endif %}
+{% endblock %}

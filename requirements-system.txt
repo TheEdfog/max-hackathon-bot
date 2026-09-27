@@ -1,0 +1,12 @@
+# System-level dependencies for local development.
+# These are installed outside pip and are not handled by requirements.txt.
+
+python>=3.10
+postgresql>=14
+miktex
+git
+
+# Runtime configuration values required in .env:
+# DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/cvservice_db
+# DEEPSEEK_API_KEY=<your DeepSeek API key>
+# LATEX_ENGINE=xelatex

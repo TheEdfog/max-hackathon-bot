@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-wrap">
+    <div class="card auth-card">
+        <span class="eyebrow">РезюмИТ</span>
+        <h2>Вход</h2>
+        <p>Войдите, чтобы работать с профилем, вакансиями, match-скорингом и генерацией резюме.</p>
+
+        {% if error %}
+            <div class="page-notice page-notice-danger inline-notice">{{ error }}</div>
+        {% endif %}
+
+        <form action="/login" method="post" class="form-grid">
+            <label class="form-label">
+                <span>Email</span>
+                <input type="email" name="email" placeholder="you@example.com" value="{{ email_value or '' }}" required>
+            </label>
+
+            <label class="form-label">
+                <span>Пароль</span>
+                <input type="password" name="password" placeholder="Введите пароль" required>
+            </label>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Войти</button>
+                <a href="/register" class="btn btn-secondary">Создать аккаунт</a>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

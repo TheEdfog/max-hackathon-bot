@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Анкета кандидата</span>
+        <h2>{% if is_edit %}Редактирование профиля{% else %}Создание профиля{% endif %}</h2>
+        <p>
+            Запишите реальный опыт максимально полно: работу, учебные проекты, курсы,
+            достижения и навыки. Лишнее в резюме не попадёт: система отберёт подходящее под вакансию.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a href="/profiles" class="btn btn-secondary">К профилю</a>
+    </div>
+</section>
+
+<section class="card">
+    {% if form_error %}
+        <div class="page-notice page-notice-danger inline-notice">{{ form_error }}</div>
+    {% endif %}
+    {% if skill_extract_message %}
+        <div class="page-notice page-notice-{{ skill_extract_type }} inline-notice">{{ skill_extract_message }}</div>
+    {% endif %}
+
+    <form
+        action="{% if is_edit and profile %}/profiles/{{ profile.id }}{% else %}/profiles/create{% endif %}"
+        method="post"
+        class="form-grid"
+        data-clear-analysis-cache
+    >
+        <div class="form-section">
+            <h3>Контакты и цель</h3>
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>ФИО</span>
+                    <input type="text" name="full_name" value="{{ form_initial.full_name }}" required>
+                </label>
+                <label class="form-label">
+                    <span>Желаемая должность</span>
+                    <input type="text" name="target_position" value="{{ form_initial.target_position }}" placeholder="Backend-разработчик / Backend Developer (Python)" required>
+                    <small class="form-help">
+                        Можно указать русское и английское название через «/», а в скобках добавить основную технологию:
+                        например, Backend-разработчик / Backend Developer (Python).
+                    </small>
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Email</span>
+                    <input type="email" name="email" value="{{ form_initial.email }}" required>
+                </label>
+                <label class="form-label">
+                    <span>Телефон</span>
+                    <input type="text" name="phone" value="{{ form_initial.phone }}" required>
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Город</span>
+                    <input type="text" name="city" value="{{ form_initial.city }}" placeholder="Москва" required>
+                    <small class="form-help">Укажите город, в котором готовы работать или куда планируете переезд.</small>
+                </label>
+                <label class="form-label">
+                    <span>Формат работы</span>
+                    <input type="text" name="work_format" value="{{ form_initial.work_format }}" placeholder="офис, гибрид, удалённо, готов к переезду" required>
+                    <small class="form-help">Это помогает учитывать офисные вакансии, удалёнку, гибрид и часовой пояс.</small>
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Зарплатные ожидания</span>
+                    <input type="text" name="salary_expectation" value="{{ form_initial.salary_expectation }}" placeholder="120 000 ₽ или по договорённости">
+                </label>
+                <label class="form-label">
+                    <span>GitHub</span>
+                    <input type="text" name="github_url" value="{{ form_initial.github_url }}" placeholder="https://github.com/...">
+                </label>
+            </div>
+
+            <label class="form-label">
+                <span>LinkedIn</span>
+                <input type="text" name="linkedin_url" value="{{ form_initial.linkedin_url }}" placeholder="https://www.linkedin.com/in/...">
+            </label>
+        </div>
+
+        <div class="form-section">
+            <h3>Коротко о себе</h3>
+            <label class="form-label">
+                <span>Профессиональное описание</span>
+                <textarea name="summary_text" rows="4" placeholder="2-4 предложения: кто вы, с чем работали, в каком направлении хотите развиваться." required>{{ form_initial.summary_text }}</textarea>
+                <small class="form-help">Пишите профессионально: опыт, стек, направление развития. Личные увлечения вроде «люблю цветы» сюда лучше не добавлять.</small>
+            </label>
+
+            <label class="form-label">
+                <span>Soft skills</span>
+                <small class="form-help">
+                    Здесь можно оставить уже добавленные качества. Новые soft skills удобнее отмечать на странице анализа,
+                    когда они действительно встречаются в конкретной вакансии.
+                </small>
+                <input
+                    type="text"
+                    name="soft_skills_custom_text"
+                    value="{{ form_initial.soft_skills_text }}"
+                    placeholder="Коммуникация, ответственность, командная работа"
+                >
+                <small class="form-help">В итоговое резюме попадут не все качества подряд, а только релевантные вакансии и не больше разумного количества.</small>
+            </label>
+
+            <label class="form-label">
+                <span>Ключевые навыки</span>
+                <input type="text" name="skills_text" value="{{ form_initial.skills_text }}" placeholder="python, fastapi, postgresql, docker" required>
+                <small class="form-help">
+                    Здесь удобно перечислять через запятую. Сохранение больше не дописывает навыки автоматически:
+                    если хотите, извлеките их из анкеты отдельной кнопкой и проверьте список перед сохранением.
+                </small>
+            </label>
+            <div class="field-action-row">
+                <small class="form-help">Система посмотрит описание, опыт, проекты, образование и курсы, а затем добавит найденные профессиональные навыки в поле выше.</small>
+                <button type="submit" name="profile_action" value="extract_skills" class="btn btn-secondary" formnovalidate>
+                    Извлечь навыки из анкеты
+                </button>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-heading-row">
+                <div>
+                    <h3>Опыт работы</h3>
+                    <p>Добавьте каждое место работы, стажировку или учебную практику отдельной карточкой.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-add-template="experience-template" data-add-target="experience-list">+ Добавить место</button>
+            </div>
+
+            <div class="repeatable-list" id="experience-list">
+                {% for entry in form_initial.experience_entries %}
+                    <div class="repeatable-card">
+                        <div class="repeatable-card-header">
+                            <strong>Место работы</strong>
+                            <button type="button" class="btn btn-danger" data-remove-card>Удалить</button>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Компания</span>
+                                <input type="text" name="experience_company" value="{{ entry.company }}" placeholder="Компания, учебная организация или волонтёрский проект">
+                            </label>
+                            <label class="form-label">
+                                <span>Должность</span>
+                                <input type="text" name="experience_position" value="{{ entry.position }}" placeholder="Backend-разработчик, стажёр, аналитик">
+                            </label>
+                        </div>
+                        <label class="form-label">
+                            <span>Город работы</span>
+                            <input type="text" name="experience_city" value="{{ entry.city }}" placeholder="Москва, удалённо, Санкт-Петербург">
+                            <small class="form-help">Укажите город конкретного места работы или формат вроде «удалённо», если опыт был дистанционным.</small>
+                        </label>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Дата начала</span>
+                                <input type="month" name="experience_start" value="{{ entry.start }}">
+                            </label>
+                            <label class="form-label">
+                                <span>Дата окончания</span>
+                                <input type="month" name="experience_end" value="{{ entry.end }}">
+                                <small class="form-help">Оставьте пустым, если опыт продолжается сейчас.</small>
+                            </label>
+                        </div>
+                        <label class="form-label">
+                            <span>Задачи</span>
+                            <textarea name="experience_tasks" rows="4" placeholder="Что делали? Какие технологии использовали? Какие задачи решали?">{{ entry.tasks }}</textarea>
+                            <small class="form-help">Можно указывать учебную практику, если она похожа на реальные рабочие задачи.</small>
+                        </label>
+                        <label class="form-label">
+                            <span>Достижения и результаты</span>
+                            <textarea name="experience_achievements" rows="4" placeholder="Что улучшили, запустили, автоматизировали или довели до результата?">{{ entry.achievements }}</textarea>
+                            <small class="form-help">
+                                Если метрик нет, опишите результат словами. При генерации резюме можно включить режим,
+                                в котором система поможет аккуратно оценить возможные метрики по вашим задачам.
+                            </small>
+                        </label>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-heading-row">
+                <div>
+                    <h3>Проекты</h3>
+                    <p>Учебные, пет-проекты, волонтёрские и дипломные проекты лучше добавлять отдельно.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-add-template="project-template" data-add-target="project-list">+ Добавить проект</button>
+            </div>
+
+            <div class="repeatable-list" id="project-list">
+                {% for entry in form_initial.project_entries %}
+                    <div class="repeatable-card">
+                        <div class="repeatable-card-header">
+                            <strong>Проект</strong>
+                            <button type="button" class="btn btn-danger" data-remove-card>Удалить</button>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Название проекта</span>
+                                <input type="text" name="project_name" value="{{ entry.name }}" placeholder="Task Manager API, РезюмИТ">
+                            </label>
+                            <label class="form-label">
+                                <span>Стек</span>
+                                <input type="text" name="project_stack" value="{{ entry.stack }}" placeholder="Python, FastAPI, PostgreSQL, Docker">
+                            </label>
+                        </div>
+                        <label class="form-label">
+                            <span>Ваша роль</span>
+                            <input type="text" name="project_role" value="{{ entry.role }}" placeholder="Разработал API, настроил БД, написал тесты">
+                        </label>
+                        <label class="form-label">
+                            <span>Описание проекта</span>
+                            <textarea name="project_description" rows="4" placeholder="Что это за проект и какую задачу он решает?">{{ entry.description }}</textarea>
+                        </label>
+                        <label class="form-label">
+                            <span>Результат</span>
+                            <textarea name="project_result" rows="3" placeholder="Что получилось в итоге? Что можно показать рекрутеру?">{{ entry.result }}</textarea>
+                        </label>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-heading-row">
+                <div>
+                    <h3>Образование</h3>
+                    <p>Если было несколько программ обучения, добавьте каждую отдельно.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-add-template="education-template" data-add-target="education-list">+ Добавить образование</button>
+            </div>
+
+            <div class="repeatable-list" id="education-list">
+                {% for entry in form_initial.education_entries %}
+                    <div class="repeatable-card">
+                        <div class="repeatable-card-header">
+                            <strong>Образование</strong>
+                            <button type="button" class="btn btn-danger" data-remove-card>Удалить</button>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Учебное заведение</span>
+                                <input type="text" name="education_org" value="{{ entry.org }}" placeholder="Университет, колледж">
+                            </label>
+                            <label class="form-label">
+                                <span>Направление</span>
+                                <input type="text" name="education_program" value="{{ entry.program }}" placeholder="Прикладная информатика">
+                            </label>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Год начала</span>
+                                <input type="text" name="education_start" value="{{ entry.start }}" placeholder="2022">
+                            </label>
+                            <label class="form-label">
+                                <span>Год окончания</span>
+                                <input type="text" name="education_end" value="{{ entry.end }}" placeholder="2026">
+                            </label>
+                        </div>
+                        <label class="form-label">
+                            <span>Детали</span>
+                            <textarea name="education_details" rows="3" placeholder="Тема диплома, релевантные дисциплины, важные учебные проекты.">{{ entry.details }}</textarea>
+                        </label>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-heading-row">
+                <div>
+                    <h3>Курсы и сертификаты</h3>
+                    <p>Добавляйте только то, что помогает подтвердить квалификацию под IT-вакансию.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-add-template="course-template" data-add-target="course-list">+ Добавить курс</button>
+            </div>
+
+            <div class="repeatable-list" id="course-list">
+                {% for entry in form_initial.course_entries %}
+                    <div class="repeatable-card">
+                        <div class="repeatable-card-header">
+                            <strong>Курс или сертификат</strong>
+                            <button type="button" class="btn btn-danger" data-remove-card>Удалить</button>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Название</span>
+                                <input type="text" name="course_name" value="{{ entry.name }}" placeholder="Python-разработчик, SQL для анализа данных">
+                            </label>
+                            <label class="form-label">
+                                <span>Организация</span>
+                                <input type="text" name="course_provider" value="{{ entry.provider }}" placeholder="Stepik, Coursera, Яндекс Практикум">
+                            </label>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Год</span>
+                                <input type="text" name="course_year" value="{{ entry.year }}" placeholder="2025">
+                            </label>
+                            <label class="form-label">
+                                <span>Детали</span>
+                                <input type="text" name="course_details" value="{{ entry.details }}" placeholder="Что изучили или какой сертификат получили">
+                            </label>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="section-heading-row">
+                <div>
+                    <h3>Хакатоны, олимпиады и активности</h3>
+                    <p>Для новичков такие активности могут быть важным подтверждением практики.</p>
+                </div>
+                <button type="button" class="btn btn-secondary" data-add-template="activity-template" data-add-target="activity-list">+ Добавить активность</button>
+            </div>
+
+            <div class="repeatable-list" id="activity-list">
+                {% for entry in form_initial.activity_entries %}
+                    <div class="repeatable-card">
+                        <div class="repeatable-card-header">
+                            <strong>Активность</strong>
+                            <button type="button" class="btn btn-danger" data-remove-card>Удалить</button>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Тип</span>
+                                <input type="text" name="activity_type" value="{{ entry.type }}" placeholder="хакатон, олимпиада, волонтёрский проект">
+                            </label>
+                            <label class="form-label">
+                                <span>Название</span>
+                                <input type="text" name="activity_name" value="{{ entry.name }}" placeholder="Название события или проекта">
+                            </label>
+                        </div>
+                        <div class="form-two-columns">
+                            <label class="form-label">
+                                <span>Год</span>
+                                <input type="text" name="activity_year" value="{{ entry.year }}" placeholder="2025">
+                            </label>
+                            <label class="form-label">
+                                <span>Результат</span>
+                                <input type="text" name="activity_result" value="{{ entry.result }}" placeholder="место, роль, итог, ссылка на проект">
+                            </label>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h3>Дополнительно</h3>
+            <label class="form-label">
+                <span>Языки</span>
+                <input type="text" name="languages_text" value="{{ form_initial.languages_text }}" placeholder="Русский, Английский B1">
+                <small class="form-help">Здесь нормально перечислять через запятую.</small>
+            </label>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{% if is_edit %}Сохранить изменения{% else %}Создать профиль{% endif %}</button>
+            <a href="/profiles" class="btn btn-secondary">Отмена</a>
+        </div>
+    </form>
+</section>
+
+{% include "profiles/dynamic_form_templates.html" %}
+{% endblock %}

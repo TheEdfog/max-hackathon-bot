@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Источник вакансии</span>
+        <h2>{% if is_edit %}Редактирование вакансии{% else %}Добавление вакансии{% endif %}</h2>
+        <p>
+            Добавьте ссылку на hh.ru или вставьте текст вакансии вручную. Чем чище исходный текст,
+            тем точнее система выделит требования и посчитает совпадение с профилем.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a href="/vacancies" class="btn btn-secondary">К вакансиям</a>
+    </div>
+</section>
+
+<section class="card">
+    {% if form_error %}
+        <div class="page-notice page-notice-danger inline-notice">{{ form_error }}</div>
+    {% endif %}
+
+    <form
+        action="{% if is_edit and vacancy %}/vacancies/{{ vacancy.id }}{% else %}/vacancies/create{% endif %}"
+        method="post"
+        class="form-grid"
+        data-loading-form
+        data-clear-analysis-cache
+        data-loading-messages="Сохраняем вакансию|Если это hh.ru, получаем текст через API|Чистим текст от лишнего|Выделяем требования|Разделяем обязательное и желательное|Нормализуем навыки|Проверяем must и nice|Готовим вакансию к анализу|Почти готово"
+    >
+        <label class="form-label">
+            <span>Название вакансии</span>
+            <input type="text" name="title" value="{{ form_initial.title }}" placeholder="Backend-разработчик Python">
+        </label>
+
+        <label class="form-label">
+            <span>Ссылка на вакансию</span>
+            <input type="text" name="source_url" value="{{ form_initial.source_url }}" placeholder="https://hh.ru/vacancy/123456789">
+            <small class="form-help">
+                Если это ссылка на hh.ru, РезюмИТ получит текст через HH API. Если вакансия с другого сайта,
+                вставьте её текст вручную: так мы не будем сохранять страницы ошибок и рекламный мусор.
+            </small>
+        </label>
+
+        <label class="form-label">
+            <span>Текст вакансии</span>
+            <textarea name="raw_text" rows="16">{{ form_initial.raw_text }}</textarea>
+            <small class="form-help">
+                Можно вставить русскоязычную, англоязычную или смешанную вакансию. Для hh.ru это поле можно оставить пустым,
+                если выше указана ссылка.
+                Чем полнее текст, тем точнее будут требования и рекомендации.
+            </small>
+        </label>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{% if is_edit %}Сохранить и пересчитать требования{% else %}Сохранить вакансию{% endif %}</button>
+            <a href="/vacancies" class="btn btn-secondary">Отмена</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

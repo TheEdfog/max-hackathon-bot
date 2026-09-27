@@ -1,0 +1,10 @@
+{$PUBLIC_HOST} {
+    request_body {
+        max_size 6MB
+    }
+    reverse_proxy api:8000
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

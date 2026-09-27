@@ -1,0 +1,224 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<section class="page-header">
+    <div class="page-title-group">
+        <span class="eyebrow">Анкета кандидата</span>
+        <h2>{% if is_edit %}Редактирование профиля{% else %}Создание профиля{% endif %}</h2>
+        <p>
+            Запишите реальный опыт максимально полно: работу, учебные проекты, курсы,
+            достижения и навыки. Лишнее в резюме не попадёт: система отберёт подходящее под вакансию.
+        </p>
+    </div>
+    <div class="page-actions">
+        <a href="/profiles" class="btn btn-secondary">К профилю</a>
+    </div>
+</section>
+
+<section class="card">
+    {% if form_error %}
+        <div class="page-notice page-notice-danger inline-notice">{{ form_error }}</div>
+    {% endif %}
+
+    <form action="{% if is_edit and profile %}/profiles/{{ profile.id }}{% else %}/profiles/create{% endif %}" method="post" class="form-grid">
+        <div class="form-section">
+            <h3>Контакты и цель</h3>
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>ФИО</span>
+                    <input type="text" name="full_name" value="{{ form_initial.full_name }}" required>
+                </label>
+                <label class="form-label">
+                    <span>Желаемая должность</span>
+                    <input type="text" name="target_position" value="{{ form_initial.target_position }}" placeholder="Backend-разработчик / Backend Developer (Python)" required>
+                    <small class="form-help">Можно указать русское и английское название, если это помогает точнее описать цель.</small>
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Email</span>
+                    <input type="email" name="email" value="{{ form_initial.email }}" required>
+                </label>
+                <label class="form-label">
+                    <span>Телефон</span>
+                    <input type="text" name="phone" value="{{ form_initial.phone }}" required>
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Город или формат работы</span>
+                    <input type="text" name="city" value="{{ form_initial.city }}" placeholder="Москва, удалённо, готов к переезду">
+                    <small class="form-help">Укажите город, удалёнку или готовность к переезду, если это важно для вакансии.</small>
+                </label>
+                <label class="form-label">
+                    <span>Зарплатные ожидания</span>
+                    <input type="text" name="salary_expectation" value="{{ form_initial.salary_expectation }}" placeholder="120 000 ₽ или по договорённости">
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>GitHub</span>
+                    <input type="text" name="github_url" value="{{ form_initial.github_url }}" placeholder="https://github.com/...">
+                </label>
+                <label class="form-label">
+                    <span>LinkedIn</span>
+                    <input type="text" name="linkedin_url" value="{{ form_initial.linkedin_url }}" placeholder="https://www.linkedin.com/in/...">
+                </label>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h3>Коротко о себе</h3>
+            <label class="form-label">
+                <span>Профессиональное описание</span>
+                <textarea name="summary_text" rows="4" placeholder="2-4 предложения: кто вы, с чем работали, в каком направлении хотите развиваться.">{{ form_initial.summary_text }}</textarea>
+                <small class="form-help">Не нужно писать всё подряд. Лучше коротко связать ваш опыт с желаемой работой.</small>
+            </label>
+
+            <label class="form-label">
+                <span>Ключевые навыки</span>
+                <input type="text" name="skills_text" value="{{ form_initial.skills_text }}" placeholder="python, fastapi, postgresql, docker">
+                <small class="form-help">Через запятую. Добавляйте только навыки, которыми реально пользовались или уверенно владеете.</small>
+            </label>
+        </div>
+
+        <div class="form-section">
+            <h3>Опыт работы</h3>
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Компания</span>
+                    <input type="text" name="experience_company" value="{{ form_initial.experience_company or '' }}" placeholder="Название компании или учебной организации">
+                </label>
+                <label class="form-label">
+                    <span>Должность</span>
+                    <input type="text" name="experience_position" value="{{ form_initial.experience_position or '' }}" placeholder="Backend-разработчик, стажёр, аналитик">
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Дата начала</span>
+                    <input type="month" name="experience_start" value="{{ form_initial.experience_start or '' }}">
+                </label>
+                <label class="form-label">
+                    <span>Дата окончания</span>
+                    <input type="month" name="experience_end" value="{{ form_initial.experience_end or '' }}">
+                    <small class="form-help">Оставьте пустым, если опыт продолжается сейчас.</small>
+                </label>
+            </div>
+
+            <label class="form-label">
+                <span>Задачи</span>
+                <textarea name="experience_tasks" rows="5" placeholder="Что делали? Какие технологии использовали? Какие задачи решали?">{{ form_initial.experience_tasks or '' }}</textarea>
+                <small class="form-help">Здесь можно указать и учебную практику, если она похожа на реальные рабочие задачи.</small>
+            </label>
+
+            <label class="form-label">
+                <span>Достижения и результаты</span>
+                <textarea name="experience_achievements" rows="4" placeholder="Что улучшили, запустили, автоматизировали или довели до результата?">{{ form_initial.experience_achievements or '' }}</textarea>
+                <small class="form-help">Не придумывайте цифры. Если метрик нет, опишите полезный результат словами.</small>
+            </label>
+
+            <label class="form-label">
+                <span>Дополнительный опыт</span>
+                <textarea name="extra_experience_text" rows="5">{{ form_initial.extra_experience_text or form_initial.experience_text }}</textarea>
+                <small class="form-help">Если у вас уже был текст опыта или есть ещё одно место работы, оставьте его здесь.</small>
+            </label>
+        </div>
+
+        <div class="form-section">
+            <h3>Проекты</h3>
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Название проекта</span>
+                    <input type="text" name="project_name" value="{{ form_initial.project_name or '' }}" placeholder="Task Manager API, РезюмИТ">
+                </label>
+                <label class="form-label">
+                    <span>Стек</span>
+                    <input type="text" name="project_stack" value="{{ form_initial.project_stack or '' }}" placeholder="Python, FastAPI, PostgreSQL, Docker">
+                </label>
+            </div>
+
+            <label class="form-label">
+                <span>Ваша роль</span>
+                <input type="text" name="project_role" value="{{ form_initial.project_role or '' }}" placeholder="Разработал API, настроил БД, написал тесты">
+            </label>
+
+            <label class="form-label">
+                <span>Описание проекта</span>
+                <textarea name="project_description" rows="4" placeholder="Что это за проект и какую задачу он решает?">{{ form_initial.project_description or '' }}</textarea>
+            </label>
+
+            <label class="form-label">
+                <span>Результат</span>
+                <textarea name="project_result" rows="3" placeholder="Что получилось в итоге? Что можно показать рекрутеру?">{{ form_initial.project_result or '' }}</textarea>
+            </label>
+
+            <label class="form-label">
+                <span>Дополнительные проекты</span>
+                <textarea name="extra_projects_text" rows="5">{{ form_initial.extra_projects_text or form_initial.projects_text }}</textarea>
+                <small class="form-help">Учебные проекты можно указывать, если они подтверждают навыки из вакансии.</small>
+            </label>
+        </div>
+
+        <div class="form-section">
+            <h3>Образование и дополнительные сведения</h3>
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Учебное заведение</span>
+                    <input type="text" name="education_org" value="{{ form_initial.education_org or '' }}" placeholder="Университет, колледж, курс">
+                </label>
+                <label class="form-label">
+                    <span>Направление</span>
+                    <input type="text" name="education_program" value="{{ form_initial.education_program or '' }}" placeholder="Прикладная информатика">
+                </label>
+            </div>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Год начала</span>
+                    <input type="text" name="education_start" value="{{ form_initial.education_start or '' }}" placeholder="2022">
+                </label>
+                <label class="form-label">
+                    <span>Год окончания</span>
+                    <input type="text" name="education_end" value="{{ form_initial.education_end or '' }}" placeholder="2026">
+                </label>
+            </div>
+
+            <label class="form-label">
+                <span>Дополнительно об образовании</span>
+                <textarea name="education_details" rows="3" placeholder="Тема диплома, важные учебные проекты, релевантные дисциплины.">{{ form_initial.education_details or '' }}</textarea>
+            </label>
+
+            <label class="form-label">
+                <span>Прежний текст образования или дополнительные курсы</span>
+                <textarea name="extra_education_text" rows="4">{{ form_initial.extra_education_text or form_initial.education_text }}</textarea>
+            </label>
+
+            <div class="form-two-columns">
+                <label class="form-label">
+                    <span>Сертификаты</span>
+                    <textarea name="certificates_text" rows="5">{{ form_initial.certificates_text }}</textarea>
+                </label>
+                <label class="form-label">
+                    <span>Языки</span>
+                    <textarea name="languages_text" rows="5">{{ form_initial.languages_text }}</textarea>
+                </label>
+            </div>
+
+            <label class="form-label">
+                <span>Soft skills</span>
+                <textarea name="soft_skills_text" rows="4">{{ form_initial.soft_skills_text }}</textarea>
+                <small class="form-help">Лучше 2-3 качества, которые действительно важны для вашей роли.</small>
+            </label>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{% if is_edit %}Сохранить изменения{% else %}Создать профиль{% endif %}</button>
+            <a href="/profiles" class="btn btn-secondary">Отмена</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

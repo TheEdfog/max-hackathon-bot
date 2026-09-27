@@ -1,0 +1,7 @@
+{% if flash_message %}
+    <div class="toast-container">
+        <div class="alert alert-{{ flash_type }} toast-alert">
+            {{ flash_message }}
+        </div>
+    </div>
+{% endif %}

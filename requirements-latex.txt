@@ -1,0 +1,34 @@
+# LaTeX/MiKTeX packages used by generated resume and cover-letter PDFs.
+# Install with:
+#   .\setup_windows.ps1
+# or manually:
+#   mpm --install=<package>
+
+geometry
+fontspec
+babel
+babel-russian
+hyperref
+url
+xcolor
+hycolor
+kvsetkeys
+kvdefinekeys
+pdfescape
+ltxcmds
+pdftexcmds
+infwarerr
+refcount
+gettitlestring
+kvoptions
+letltxmacro
+auxhook
+atbegshi
+atveryend
+rerunfilecheck
+uniquecounter
+bitset
+bigintcalc
+intcalc
+etexcmds
+stringenc
