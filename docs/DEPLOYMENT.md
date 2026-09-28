@@ -26,7 +26,7 @@ Caddy получает доверенный сертификат для PUBLIC_H
 
 ### Если есть только публичный IPv4
 
-Задайте `PUBLIC_HOST=публичный_IP` и `PUBLIC_URL=https://публичный_IP`, добавьте `-f compose.ip.yml` после production-файла. Этот вариант явно выбирает Let's Encrypt и профиль `shortlived`, а не внутренний самоподписной сертификат Caddy. Нужны открытые снаружи TCP 80/443; сертификаты автоматически обновляются, volume Caddy должен сохраняться. [IP-сертификаты Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability), [настройка профиля Caddy](https://caddyserver.com/docs/caddyfile/directives/tls#issuers). Проверка синтаксиса не подтверждает выдачу сертификата или приём webhook MAX.
+Задайте `PUBLIC_HOST=публичный_IP` и `PUBLIC_URL=https://публичный_IP`, добавьте `-f compose.ip.yml` после production-файла. Этот вариант явно выбирает Let's Encrypt и профиль `shortlived`, а не внутренний самоподписной сертификат Caddy. Для IP-клиентов без SNI указан `default_sni`: иначе Caddy внутри Docker может искать сертификат для внутреннего адреса контейнера. Нужны открытые снаружи TCP 80/443; сертификаты автоматически обновляются, volume Caddy должен сохраняться. [IP-сертификаты Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability), [настройка профиля Caddy](https://caddyserver.com/docs/caddyfile/directives/tls#issuers), [default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni). Проверка синтаксиса не подтверждает выдачу сертификата или приём webhook MAX.
 
 Остановить локальный polling. Команда ниже сначала только показывает план, затем регистрирует webhook после проверки здоровья. Она не удаляет чужие подписки:
 
