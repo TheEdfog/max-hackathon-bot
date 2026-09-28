@@ -1,5 +1,5 @@
 # DATA-API 1.0, based on stasnorman/example-data-api (see docs/DATA-API.md).
-# DRAFT: replace api.baseUrl after HTTPS deployment. This URL is NOT live.
+# Public HTTPS verified on 2026-09-28. Full checks need private synthetic accounts.
 # No credentials here. The evaluator supplies a Bearer JWT for each named role.
 # Integration checks issue a short-lived scoped key in memory and revoke it in cleanup.
 # Use dedicated synthetic employer/candidate/other_employer accounts without MAX links.
@@ -8,7 +8,7 @@ solution:
   name: "РезюмИТ Найм — помощник первичного отбора в MAX"
   # teamId is optional; add only the confirmed organizer-issued team identifier.
 api:
-  baseUrl: "https://deployment-required.invalid"
+  baseUrl: "https://176.108.244.193"
   openapi: "./openapi.json"
   defaultHeaders:
     Accept: "application/json"
