@@ -7,18 +7,28 @@ from dataclasses import dataclass, field
 @dataclass
 class Config:
     database_url: str = field(default_factory=lambda: os.getenv("HIRING_DATABASE_URL", "sqlite:///data/hiring.db"))
-    secret: str = field(default_factory=lambda: os.getenv("HIRING_SECRET", ""))
+    secret: str = field(default_factory=lambda: os.getenv("HIRING_SECRET", ""), repr=False)
     production: bool = field(default_factory=lambda: os.getenv("HIRING_ENV", "development") == "production")
     demo: bool = field(default_factory=lambda: os.getenv("HIRING_DEMO", "true").lower() == "true")
-    employer_code: str = field(default_factory=lambda: os.getenv("HIRING_EMPLOYER_CODE", ""))
-    bot_token: str = field(default_factory=lambda: os.getenv("MAX_BOT_TOKEN", ""))
+    employer_code: str = field(default_factory=lambda: os.getenv("HIRING_EMPLOYER_CODE", ""), repr=False)
+    bot_token: str = field(default_factory=lambda: os.getenv("MAX_BOT_TOKEN", ""), repr=False)
     bot_name: str = field(default_factory=lambda: os.getenv("MAX_BOT_NAME", ""))
-    webhook_secret: str = field(default_factory=lambda: os.getenv("MAX_WEBHOOK_SECRET", ""))
+    webhook_secret: str = field(default_factory=lambda: os.getenv("MAX_WEBHOOK_SECRET", ""), repr=False)
     max_api_url: str = field(default_factory=lambda: os.getenv("MAX_API_URL", "https://platform-api2.max.ru"))
     public_url: str = field(default_factory=lambda: os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/"))
     worker: bool = field(default_factory=lambda: os.getenv('HIRING_WORKER', 'true').lower() == 'true')
+    # CLI-only opt-in; never enabled by the ordinary production environment file.
+    sandbox: bool = False
+    sandbox_users: tuple[str, ...] = ()
 
     def validate(self):
+        if self.sandbox:
+            from sqlalchemy.engine import make_url
+            database = make_url(self.database_url)
+            if self.production or database.get_backend_name() != 'sqlite' or not (database.database or '').endswith('.sandbox.db'):
+                raise ValueError('Sandbox requires development and a separate *.sandbox.db database')
+            if not self.sandbox_users or any(not value.isascii() or not value.isdigit() or not 0 < int(value) < 2**63 for value in self.sandbox_users):
+                raise ValueError('Sandbox requires an explicit MAX user allowlist')
         if self.bot_token and self.max_api_url != 'https://platform-api2.max.ru':
             raise ValueError('Refusing to send a MAX token to an unapproved API origin')
         if self.production:

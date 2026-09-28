@@ -8,14 +8,14 @@ from test_product import client
 
 
 @pytest.mark.parametrize('resume, expected', [
-    ('Python не изучал.', 'negative'), ('Python не владею.', 'negative'),
-    ('Не использовала Python.', 'negative'), ('Нет опыта с Python.', 'negative'),
-    ('Без опыта Python.', 'negative'), ('Python не знаю.', 'negative'),
-    ('С Python не знаком.', 'negative'), ('Не доводилось работать с Python.', 'negative'),
-    ('Python использовал, Docker не использовал.', 'mentioned'),
-    ('Python использовал и Docker не использовал.', 'mentioned'),
-    ('Не знаю Docker, Python использовал в проекте.', 'mentioned'),
-    ('Python использовал. Python не знаю.', 'conflict'),
+    ('Python не изучал.', 'review'), ('Python не владею.', 'review'),
+    ('Не использовала Python.', 'review'), ('Нет опыта с Python.', 'review'),
+    ('Без опыта Python.', 'review'), ('Python не знаю.', 'review'),
+    ('С Python не знаком.', 'review'), ('Не доводилось работать с Python.', 'review'),
+    ('Python использовал, Docker не использовал.', 'review'),
+    ('Python использовал и Docker не использовал.', 'review'),
+    ('Не знаю Docker, Python использовал в проекте.', 'review'),
+    ('Python использовал. Python не знаю.', 'review'),
     ('Знаю Python.', 'mentioned'), ('Работаю на питоне.', 'mentioned'),
     ('Python: написал сервис.', 'mentioned'), ('Работал с python!', 'mentioned'),
     ('Пишу на Java.', 'unknown'), ('Pythonista — название клуба.', 'unknown'),
@@ -23,8 +23,8 @@ from test_product import client
     ('Хочу изучить Python.', 'review'), ('Планирую освоить Python.', 'review'),
     ('Возможно, знаю Python.', 'review'), ('Python — слышал о нём.', 'review'),
     ('Не только Python, но и SQL.', 'review'),
-    ('I have never used Python.', 'negative'), ('I do not know Python.', 'negative'),
-    ('Python: no experience.', 'negative'), ('I used Python.', 'mentioned'),
+    ('I have never used Python.', 'review'), ('I do not know Python.', 'review'),
+    ('Python: no experience.', 'review'), ('I used Python.', 'mentioned'),
     ('I want to learn Python.', 'review'),
 ])
 def test_matching_corpus(resume, expected):

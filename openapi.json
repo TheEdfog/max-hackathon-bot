@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.1.0"
+    "version": "1.7.0"
   },
   "paths": {
     "/health": {
@@ -519,6 +519,58 @@
         ]
       }
     },
+    "/api/jobs/{job_id}/apply-pdf": {
+      "post": {
+        "summary": "Apply Pdf",
+        "operationId": "apply_pdf_api_jobs__job_id__apply_pdf_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_apply_pdf_api_jobs__job_id__apply_pdf_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{job_id}/apply": {
       "post": {
         "summary": "Apply",
@@ -854,16 +906,1282 @@
         }
       }
     },
-    "/api/auth/demo": {
-      "post": {
-        "summary": "Demo",
-        "operationId": "demo_api_auth_demo_post",
+    "/api/integration-keys": {
+      "get": {
+        "tags": [
+          "Integration keys"
+        ],
+        "summary": "List Keys",
+        "operationId": "list_keys_api_integration_keys_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KeyInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Keys Api Integration Keys Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Integration keys"
+        ],
+        "summary": "Create Key",
+        "operationId": "create_key_api_integration_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeyIssued"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/integration-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "Integration keys"
+        ],
+        "summary": "Revoke Key",
+        "operationId": "revoke_key_api_integration_keys__key_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/jobs": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_integrations_v1_jobs_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_-]{1,40}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_JobInfo_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Get Job",
+        "operationId": "get_job_api_integrations_v1_jobs__job_id__get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Change Active",
+        "operationId": "change_active_api_integrations_v1_jobs__job_id__patch",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/jobs/by-external/{source}/{external_id}": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Get External Job",
+        "operationId": "get_external_job_api_integrations_v1_jobs_by_external__source___external_id__get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,40}$",
+              "title": "Source"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
+              "title": "External Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Put Job",
+        "operationId": "put_job_api_integrations_v1_jobs_by_external__source___external_id__put",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,40}$",
+              "title": "Source"
+            }
+          },
+          {
+            "name": "external_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,120}$",
+              "title": "External Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobPut"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/applications": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "List Applications",
+        "operationId": "list_applications_api_integrations_v1_applications_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "clarifying",
+                    "ready",
+                    "invited",
+                    "confirmed",
+                    "withdrawn"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "created_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_Union_AppSummary__Tombstone__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/applications/{app_id}": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Get Application",
+        "operationId": "get_application_api_integrations_v1_applications__app_id__get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AppPrivate"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AppSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Tombstone"
+                    }
+                  ],
+                  "title": "Response Get Application Api Integrations V1 Applications  App Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/applications/{app_id}/invite": {
+      "post": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Send Invitation",
+        "operationId": "send_invitation_api_integrations_v1_applications__app_id__invite_post",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/events": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Events",
+        "operationId": "events_api_integrations_v1_events_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 19,
+              "pattern": "^(0|[1-9][0-9]*)$",
+              "default": "0",
+              "title": "After"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/metrics": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Metrics",
+        "operationId": "metrics_api_integrations_v1_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metrics"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/v1/sources/preview": {
+      "post": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Preview",
+        "operationId": "preview_api_integrations_v1_sources_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourcePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/v1/documents/parse": {
+      "post": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Parse",
+        "operationId": "parse_api_integrations_v1_documents_parse_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_parse_api_integrations_v1_documents_parse_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParsedDocument"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ]
+      }
+    },
+    "/api/integrations/v1/applications/{app_id}/resume.txt": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Resume Text",
+        "operationId": "resume_text_api_integrations_v1_applications__app_id__resume_txt_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Candidate-provided text",
+            "content": {
+              "text/plain": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/applications/{app_id}/resume.pdf": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Resume Pdf",
+        "operationId": "resume_pdf_api_integrations_v1_applications__app_id__resume_pdf_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Original uploaded PDF",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "404": {
+            "description": "Original PDF was not provided"
+          },
+          "410": {
+            "description": "Withdrawn"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/tests": {
+      "post": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Add Test",
+        "operationId": "add_test_api_integrations_v1_tests_post",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Tests",
+        "operationId": "tests_api_integrations_v1_tests_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/tests/{test_id}": {
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Get Test",
+        "operationId": "get_test_api_integrations_v1_tests__test_id__get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "test_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Test Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Update Test",
+        "operationId": "update_test_api_integrations_v1_tests__test_id__put",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "test_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Test Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/jobs/{job_id}/assessment": {
+      "put": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Attach",
+        "operationId": "attach_api_integrations_v1_jobs__job_id__assessment_put",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestAttachment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAssessment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Assessment",
+        "operationId": "assessment_api_integrations_v1_jobs__job_id__assessment_get",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAssessment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -886,6 +2204,20 @@
         ],
         "title": "ActiveBody"
       },
+      "ActivePatch": {
+        "properties": {
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "active"
+        ],
+        "title": "ActivePatch"
+      },
       "AnswersBody": {
         "properties": {
           "answers": {
@@ -893,7 +2225,7 @@
               "type": "string"
             },
             "type": "object",
-            "maxProperties": 3,
+            "maxProperties": 9,
             "title": "Answers"
           }
         },
@@ -902,6 +2234,155 @@
           "answers"
         ],
         "title": "AnswersBody"
+      },
+      "AppPrivate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "job_title": {
+            "type": "string",
+            "title": "Job Title"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "resume": {
+            "type": "string",
+            "title": "Resume"
+          },
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Answers"
+          },
+          "questions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "invitation": {
+            "type": "string",
+            "title": "Invitation"
+          },
+          "assessment": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Assessment"
+          },
+          "timeline": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Timeline"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "consent_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Consent At"
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "name",
+          "job_title",
+          "company",
+          "resume",
+          "answers",
+          "questions",
+          "invitation",
+          "assessment",
+          "timeline",
+          "created_at",
+          "consent_at",
+          "deleted"
+        ],
+        "title": "AppPrivate"
+      },
+      "AppSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "consent_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Consent At"
+          },
+          "answered_questions": {
+            "type": "integer",
+            "title": "Answered Questions"
+          },
+          "total_questions": {
+            "type": "integer",
+            "title": "Total Questions"
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": false,
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "created_at",
+          "consent_at",
+          "answered_questions",
+          "total_questions",
+          "deleted"
+        ],
+        "title": "AppSummary"
       },
       "ApplicationBody": {
         "properties": {
@@ -930,6 +2411,46 @@
           "name"
         ],
         "title": "ApplicationBody"
+      },
+      "Body_apply_pdf_api_jobs__job_id__apply_pdf_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "consent": {
+            "type": "boolean",
+            "title": "Consent"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 2,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "consent",
+          "name"
+        ],
+        "title": "Body_apply_pdf_api_jobs__job_id__apply_pdf_post"
+      },
+      "Body_parse_api_integrations_v1_documents_parse_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_parse_api_integrations_v1_documents_parse_post"
       },
       "Body_pdf_extract_api_resume_extract_post": {
         "properties": {
@@ -966,6 +2487,61 @@
         ],
         "title": "EmployerBody"
       },
+      "EventInfo": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "type",
+          "resource_id",
+          "at"
+        ],
+        "title": "EventInfo"
+      },
+      "EventPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventInfo"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "type": "string",
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "EventPage"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -978,6 +2554,33 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InvitationResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "no_max_link"
+            ],
+            "title": "Delivery"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "delivery"
+        ],
+        "title": "InvitationResult"
       },
       "InviteBody": {
         "properties": {
@@ -993,6 +2596,28 @@
           "message"
         ],
         "title": "InviteBody"
+      },
+      "JobAssessment": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "questions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "questions"
+        ],
+        "title": "JobAssessment"
       },
       "JobBody": {
         "properties": {
@@ -1022,6 +2647,19 @@
             "maxItems": 15,
             "minItems": 1,
             "title": "Requirements"
+          },
+          "screening_questions": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "screen_motivation",
+                "screen_conditions",
+                "screen_availability"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Screening Questions"
           }
         },
         "type": "object",
@@ -1031,6 +2669,331 @@
           "requirements"
         ],
         "title": "JobBody"
+      },
+      "JobInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "terms": {
+            "type": "string",
+            "title": "Terms"
+          },
+          "requirements": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Requirements"
+          },
+          "screening_questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Screening Questions"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "applications": {
+            "type": "integer",
+            "title": "Applications"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "apply_url": {
+            "type": "string",
+            "title": "Apply Url"
+          },
+          "max_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Url"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "company",
+          "description",
+          "terms",
+          "requirements",
+          "screening_questions",
+          "active",
+          "applications",
+          "created_at",
+          "apply_url",
+          "max_url",
+          "external_id",
+          "source"
+        ],
+        "title": "JobInfo"
+      },
+      "JobPut": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 3,
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 30,
+            "title": "Description"
+          },
+          "terms": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Terms",
+            "default": ""
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/Requirement"
+            },
+            "type": "array",
+            "maxItems": 15,
+            "minItems": 1,
+            "title": "Requirements"
+          },
+          "screening_questions": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "screen_motivation",
+                "screen_conditions",
+                "screen_availability"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Screening Questions"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "description",
+          "requirements"
+        ],
+        "title": "JobPut"
+      },
+      "KeyCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 2,
+            "title": "Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "jobs:read",
+                "jobs:write",
+                "applications:read",
+                "applications:pii",
+                "invitations:write",
+                "events:read",
+                "metrics:read",
+                "tests:read",
+                "tests:write"
+              ]
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Scopes"
+          },
+          "expires_in_days": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": 1.0,
+            "title": "Expires In Days",
+            "default": 30
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "KeyCreate"
+      },
+      "KeyInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "jobs:read",
+                "jobs:write",
+                "applications:read",
+                "applications:pii",
+                "invitations:write",
+                "events:read",
+                "metrics:read",
+                "tests:read",
+                "tests:write"
+              ]
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "revoked": {
+            "type": "boolean",
+            "title": "Revoked"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "revoked",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "KeyInfo"
+      },
+      "KeyIssued": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "jobs:read",
+                "jobs:write",
+                "applications:read",
+                "applications:pii",
+                "invitations:write",
+                "events:read",
+                "metrics:read",
+                "tests:read",
+                "tests:write"
+              ]
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "revoked": {
+            "type": "boolean",
+            "title": "Revoked"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "revoked",
+          "created_at",
+          "expires_at",
+          "token",
+          "notice"
+        ],
+        "title": "KeyIssued"
       },
       "Login": {
         "properties": {
@@ -1067,6 +3030,119 @@
           "init_data"
         ],
         "title": "MaxBody"
+      },
+      "Metrics": {
+        "properties": {
+          "active_jobs": {
+            "type": "integer",
+            "title": "Active Jobs"
+          },
+          "applications": {
+            "type": "integer",
+            "title": "Applications"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Statuses"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_jobs",
+          "applications",
+          "statuses",
+          "notice"
+        ],
+        "title": "Metrics"
+      },
+      "Page_JobInfo_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JobInfo"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[JobInfo]"
+      },
+      "Page_Union_AppSummary__Tombstone__": {
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AppSummary"
+                },
+                {
+                  "$ref": "#/components/schemas/Tombstone"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "Page[Union[AppSummary, Tombstone]]"
+      },
+      "ParsedDocument": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "stored": {
+            "type": "boolean",
+            "const": false,
+            "title": "Stored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "stored"
+        ],
+        "title": "ParsedDocument"
       },
       "Registration": {
         "properties": {
@@ -1160,6 +3236,247 @@
         ],
         "title": "Requirement"
       },
+      "SourceBody": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 10,
+            "title": "Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "SourceBody"
+      },
+      "SourcePreview": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "warning": {
+            "type": "string",
+            "title": "Warning"
+          },
+          "stored": {
+            "type": "boolean",
+            "const": false,
+            "title": "Stored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "provider",
+          "warning",
+          "stored"
+        ],
+        "title": "SourcePreview"
+      },
+      "TestAttachment": {
+        "properties": {
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TestAttachment"
+      },
+      "TestBody": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Title"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/TestQuestion"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Questions"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "questions"
+        ],
+        "title": "TestBody"
+      },
+      "TestInfo": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Title"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/TestQuestion"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Questions"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "questions",
+          "id",
+          "version",
+          "created_at"
+        ],
+        "title": "TestInfo"
+      },
+      "TestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TestInfo"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "TestPage"
+      },
+      "TestQuestion": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 10,
+            "title": "Text"
+          },
+          "rubric": {
+            "type": "string",
+            "maxLength": 1500,
+            "title": "Rubric",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "TestQuestion"
+      },
+      "TestUpdate": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Title"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/TestQuestion"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Questions"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active",
+            "default": true
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "questions",
+          "expected_version"
+        ],
+        "title": "TestUpdate"
+      },
       "TextBody": {
         "properties": {
           "text": {
@@ -1174,6 +3491,36 @@
           "text"
         ],
         "title": "TextBody"
+      },
+      "Tombstone": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "withdrawn",
+            "title": "Status"
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": true,
+            "title": "Deleted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "deleted"
+        ],
+        "title": "Tombstone"
       },
       "ValidationError": {
         "properties": {
@@ -1219,6 +3566,11 @@
     "securitySchemes": {
       "HTTPBearer": {
         "type": "http",
+        "scheme": "bearer"
+      },
+      "IntegrationKey": {
+        "type": "http",
+        "description": "Scoped rhi_ key, created by employer/admin. Not a JWT. Server-side only.",
         "scheme": "bearer"
       }
     }

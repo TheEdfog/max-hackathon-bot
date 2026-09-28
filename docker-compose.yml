@@ -1,7 +1,10 @@
 name: rezumit-hiring
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: api
+    # Bot credentials are supplied only at runtime, never copied into the image.
     env_file: .env.hiring
     environment:
       HIRING_DATABASE_URL: sqlite:////app/data/hiring.db

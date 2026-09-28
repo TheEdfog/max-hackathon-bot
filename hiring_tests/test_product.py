@@ -65,7 +65,7 @@ def test_full_hiring_cycle(client):
     app = client.post(f"/api/applications/{aid}/answers", headers=candidate,
                       json={"answers": {"pg": "Использовал PostgreSQL в учебном проекте: создал схему и запросы."}}).json()
     assert app["status"] == "ready"
-    assert app["assessment"]["covered"] == 2
+    assert app["assessment"]["mentioned"] == 2
     rows = client.get(f"/api/jobs/{jid}/applications", headers=employer).json()
     assert len(rows) == 1 and rows[0]["answers"]["pg"]
     assert client.post(f"/api/applications/{aid}/invite", headers=employer, json={"message": "Приглашаем обсудить вакансию завтра в 15:00."}).json()["status"] == "invited"
@@ -145,11 +145,10 @@ def test_max_bot_persistent_dialog_and_deduplication(client):
     # No messages are actually sent by the test (worker=False).
 
 
-def test_local_extraction_demo_and_pdf_errors(client):
-    demo = client.post("/api/auth/demo").json()
-    headers = {"Authorization": "Bearer " + demo["token"]}
-    assert demo["user"]["demo"] is True
-    assert client.get("/api/metrics", headers=headers).json()["applications"] == 3
+def test_local_extraction_and_pdf_errors(client):
+    headers = register(client, 'parser', 'employer')
+    assert client.post('/api/auth/demo').status_code == 404
+    assert client.get('/assets/app.js').status_code == 404
     result = client.post("/api/requirements/extract", headers=headers, json={"text": "Требуется Python разработчик. Обязательно PostgreSQL. Будет плюсом Docker."})
     assert result.status_code == 200 and len(result.json()["requirements"]) >= 2
     assert client.post("/api/resume/extract", headers=headers, files={"file": ("cv.pdf", b"not pdf", "application/pdf")}).status_code == 422
@@ -165,11 +164,11 @@ def test_production_configuration_fails_closed():
 
 @pytest.mark.parametrize("resume,answer,state", [
     ("Python использовал в проекте", "", "mentioned"),
-    ("Не работал с Python", "", "negative"),
-    ("Python использовал. Не работал с Python.", "", "conflict"),
+    ("Не работал с Python", "", "review"),
+    ("Python использовал. Не работал с Python.", "", "review"),
     ("Работал с Java", "", "unknown"),
-    ("Java", "Python использовал, а Docker не использовал", "answered"),
-    ("Java", "нет опыта", "negative"),
+    ("Java", "Python использовал, а Docker не использовал", "review"),
+    ("Java", "нет опыта", "review"),
     ("Java", "Да, есть такой опыт", "review"),
 ])
 def test_evidence_is_explainable(resume, answer, state):

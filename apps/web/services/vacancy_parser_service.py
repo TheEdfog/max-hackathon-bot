@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 
-from core.utils import normalize_skill
+from core.utils import normalize_skill, SKILL_ALIASES
 
 
 REQUIREMENT_CATEGORIES: dict[str, tuple[str, str]] = {
@@ -121,6 +121,12 @@ REQUIREMENT_CATEGORIES: dict[str, tuple[str, str]] = {
     "google cloud": ("cloud", "Google Cloud"),
     "yandex cloud": ("cloud", "Yandex Cloud"),
     "airflow": ("orchestration", "Airflow"),
+    "spark": ("technology", "Spark / PySpark"),
+    "hadoop": ("technology", "Hadoop"),
+    "greenplum": ("database", "Greenplum"),
+    "pandas": ("technology", "pandas"),
+    "etl": ("engineering_practice", "ETL / ELT"),
+    "data quality": ("engineering_practice", "Качество данных (DQ)"),
     "prefect": ("orchestration", "Prefect"),
     "dry": ("principle", "DRY"),
     "kiss": ("principle", "KISS"),
@@ -211,7 +217,7 @@ KNOWN_SKILL_ALIASES: dict[str, list[str]] = {
     "gitlab ci": ["gitlab ci", "gitlab-ci"],
     "github actions": ["github actions"],
     "ci/cd": ["ci/cd", "cicd", "continuous integration", "continuous delivery"],
-    "rest api": ["rest", "rest api", "api"],
+    "rest api": ["rest", "rest api"],
     "openapi": ["openapi", "api documentation", "документирования rest api"],
     "graphql": ["graphql"],
     "html": ["html"],
@@ -271,6 +277,12 @@ KNOWN_SKILL_ALIASES: dict[str, list[str]] = {
     "google cloud": ["google cloud"],
     "yandex cloud": ["yandex cloud", "яндекс cloud", "yandex cloud"],
     "airflow": ["airflow"],
+    "spark": ["spark", "apache spark", "pyspark"],
+    "hadoop": ["hadoop", "apache hadoop"],
+    "greenplum": ["greenplum"],
+    "pandas": ["pandas"],
+    "etl": ["etl", "elt"],
+    "data quality": ["data quality", "dq", "качество данных", "качества данных"],
     "prefect": ["prefect"],
     "microservices architecture": [
         "микросервисной архитектуры",
@@ -369,6 +381,13 @@ NICE_MARKERS = (
     "preferred",
     "приветствуется",
 )
+
+# One canonical vocabulary for vacancy extraction, manual requirements and
+# candidate evidence. Keep the original section/negation rules for every alias.
+for _alias, _canonical in SKILL_ALIASES.items():
+    KNOWN_SKILL_ALIASES.setdefault(_canonical, [_canonical])
+    if _alias not in KNOWN_SKILL_ALIASES[_canonical]:
+        KNOWN_SKILL_ALIASES[_canonical].append(_alias)
 
 MUST_SECTION_MARKERS = (
     "требования:",
@@ -680,9 +699,12 @@ def _source_excerpt(text: str, position: int, *, radius: int = 90) -> str:
     return _compact_source_text(text[start:end])
 
 
-def _is_negated_mention(text: str, position: int) -> bool:
-    prefix = text[max(0, position - 32):position].lower()
-    return any(marker in prefix for marker in ("без ", "без использования", "without ", "no ", "not "))
+def _is_negated_mention(text: str, position: int, end: int) -> bool:
+    prefix = re.split(r'[\n;.!?,]', text[max(0, position - 48):position].lower())[-1]
+    suffix = text[end:end + 60].lower()
+    if re.match(r'\s*(?:не\s+(?:требуется|нужен|нужна|нужны)|(?:is\s+)?not\s+required)\b', suffix):
+        return True
+    return bool(re.search(r'(?:\bбез\b|\bwithout\b|\bno\b|\bnot\b(?!\s+only)|не\s+(?:нужен|нужна|нужны|требуется))', prefix))
 
 
 def _nearest_marker_type(text: str, position: int) -> str | None:
@@ -702,6 +724,18 @@ def _nearest_marker_type(text: str, position: int) -> str | None:
 
 
 def _guess_requirement_type(text: str, position: int) -> str | None:
+    # A modifier can follow its skill: "Docker будет плюсом". An explicit
+    # unambiguous sentence-local modifier overrides an earlier section heading.
+    boundaries = ('\n', '\r', ';', '.', '!', '?')
+    start = max(text.rfind(boundary, 0, position) for boundary in boundaries) + 1
+    ends = [index for boundary in boundaries if (index := text.find(boundary, position)) >= 0]
+    local = text[start:min(ends) if ends else len(text)].lower()
+    nice = any(re.search(r'(?<!\w)' + re.escape(marker) + r'(?!\w)', local) for marker in NICE_MARKERS)
+    must = any(re.search(r'(?<!\w)' + re.escape(marker) + r'(?!\w)', local) for marker in MUST_MARKERS)
+    if nice and not must:
+        return 'nice'
+    if must and not nice:
+        return 'must'
     nearest_marker_type = _nearest_marker_type(text, position)
     if nearest_marker_type in {"nice", "must"}:
         return nearest_marker_type
@@ -753,7 +787,13 @@ def _find_skill_position(text: str, skill_norm: str) -> int | None:
 
 
 def _non_negated_positions(text: str, skill_norm: str) -> list[int]:
-    return [position for position in _find_skill_positions(text, skill_norm) if not _is_negated_mention(text, position)]
+    positions = set()
+    for alias in KNOWN_SKILL_ALIASES.get(skill_norm, [skill_norm]):
+        pattern = rf"(?<![a-zа-я0-9]){re.escape(alias)}(?![a-zа-я0-9])"
+        for match in re.finditer(pattern, text, re.I):
+            if not _is_negated_mention(text, match.start(), match.end()):
+                positions.add(match.start())
+    return sorted(positions)
 
 
 def _infer_requirement_type_from_text(text: str, skill_norm: str) -> str | None:

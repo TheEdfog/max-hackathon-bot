@@ -1,8 +1,10 @@
 from fastapi import HTTPException
 from sqlalchemy import select
-from .db import Application, Audit, BotSession, Job, Outbox, User
+from .db import Application, ApplicationReview, ResumeDocument, GithubReview, Audit, BotSession, Job, Outbox, User
 from .chat_ui import queue_message
 from .matching import evidence, questions
+from .sandbox import destination
+from .screening import screening_questions
 
 
 def notify(db, user, text, application_id=None, buttons=None):
@@ -37,7 +39,9 @@ def submit(db, user, job, resume):
         if existing.status == "withdrawn":
             raise HTTPException(409, "Отклик был отозван. Для повторного отклика свяжитесь с работодателем.")
         return existing
-    app = Application(job_id=job.id, user_id=user.id, resume=resume, questions=questions(resume, job.requirements))
+    app = Application(job_id=job.id, user_id=user.id, resume=resume,
+                      questions=questions(resume, job.requirements) + screening_questions(job.screening_questions or []) +
+                      [{key: q[key] for key in ('id', 'label', 'text', 'kind')} for q in (job.test_questions or [])])
     app.status = "clarifying" if app.questions else "ready"
     db.add(app)
     db.flush()
@@ -93,7 +97,7 @@ def withdraw_application(db, app):
         return app
     owner = db.get(User, db.get(Job, app.job_id).owner_id)
     candidate = db.get(User, app.user_id)
-    recipients = [u.max_id for u in (owner, candidate) if u.max_id]
+    recipients = [destination(u) for u in (owner, candidate) if u.max_id]
     for row in db.scalars(select(Outbox).where(
             (Outbox.application_id == app.id) |
             # Pre-v2 messages have no association: conservatively clear legacy recipient copies.
@@ -105,5 +109,9 @@ def withdraw_application(db, app):
     if session and session.state.get('application_id') == app.id:
         session.state = {}
     app.resume, app.answers, app.questions, app.invitation, app.status = '', {}, [], '', 'withdrawn'
+    for model in (ResumeDocument, ApplicationReview, GithubReview):
+        private = db.get(model, app.id)
+        if private:
+            db.delete(private)
     db.add(Audit(application_id=app.id, action='withdrawn'))
     return app

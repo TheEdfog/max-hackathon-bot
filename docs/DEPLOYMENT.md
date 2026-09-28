@@ -1,6 +1,10 @@
-# Перенос в Яндекс Cloud после настройки сервера
+# Перенос на Linux VM российского провайдера
 
-Сервер пока не настроен. Этот документ — инструкция, а не подтверждение доступного production.
+28 сентября 2026 сервер запущен: HTTPS, API и один webhook MAX; локальный polling остановлен. Результаты и границы проверки: [RELEASE-READINESS.md](RELEASE-READINESS.md). Ниже инструкция для повторного развёртывания.
+
+Коротко, какие сведения и доступы нужны от владельца: [SUBMISSION-ACCESS.md](SUBMISSION-ACCESS.md). С версии 1.7 внешние модели удалены; ключи LLM на сервер копировать не нужно.
+
+Подходит для Яндекс Cloud, Cloud.ru и обычного VPS с Docker. Актуальная проверка пробных предложений: [HOSTING-OPTIONS-2026-09-27.md](HOSTING-OPTIONS-2026-09-27.md). Создание платёжного аккаунта и выбор тарифа выполняет владелец.
 
 ## До запуска
 
@@ -20,6 +24,10 @@ docker compose --env-file .env.hiring -f docker-compose.yml -f compose.productio
 
 Caddy получает доверенный сертификат для PUBLIC_HOST и проксирует в API. Проверить `https://домен/health` и `https://домен/openapi.json` с другого компьютера. Не использовать самоподписной сертификат. Для MAX webhook нужен HTTPS на 443.
 
+### Если есть только публичный IPv4
+
+Задайте `PUBLIC_HOST=публичный_IP` и `PUBLIC_URL=https://публичный_IP`, добавьте `-f compose.ip.yml` после production-файла. Этот вариант явно выбирает Let's Encrypt и профиль `shortlived`, а не внутренний самоподписной сертификат Caddy. Для IP-клиентов без SNI указан `default_sni`: иначе Caddy внутри Docker может искать сертификат для внутреннего адреса контейнера. Нужны открытые снаружи TCP 80/443; сертификаты автоматически обновляются, volume Caddy должен сохраняться. [IP-сертификаты Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability), [настройка профиля Caddy](https://caddyserver.com/docs/caddyfile/directives/tls#issuers), [default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni). Проверка синтаксиса не подтверждает выдачу сертификата или приём webhook MAX.
+
 Остановить локальный polling. Команда ниже сначала только показывает план, затем регистрирует webhook после проверки здоровья. Она не удаляет чужие подписки:
 
 ```sh
@@ -28,6 +36,8 @@ docker compose exec api python -m hiring.webhook_setup --apply
 ```
 
 Настройка включает `bot_started`, `message_created`, `message_callback`. После регистрации пройти `docs/ACCEPTANCE.md` в двух клиентах MAX. Тест «HTTP 200» не заменяет приёмку чата.
+
+Если VM не может обратиться к собственному публичному IP (нет hairpin NAT), выполните ту же команду регистрации с доверенного компьютера вне VM, загрузив тот же закрытый deployment-env. Публичный health и TLS должны успешно проверяться оттуда. Это одноразовая регистрация, не запуск локального polling; не отключайте проверку сертификата и не пропускайте проверку доступности.
 
 ## Наблюдение и восстановление
 

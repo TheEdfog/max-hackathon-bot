@@ -13,8 +13,11 @@ jobs:
       - run: pip install -r requirements-hiring-test.lock
       - run: pip check
       - run: python tools/data_api/validate_data_api.py DATA-API.yaml
+      - run: python scripts/release_check.py
       - run: python -m pytest hiring_tests -q
       - run: docker build -t rezumit-hiring:test .
+        timeout-minutes: 5
+      - run: docker build --target polling -t rezumit-polling:test .
         timeout-minutes: 5
       - name: Container start and restart smoke
         shell: bash
@@ -25,6 +28,11 @@ jobs:
           docker exec hiring-smoke python scripts/smoke_hiring.py --wait --verify-existing
       - name: Validate HTTPS proxy configuration
         run: docker run --rm -e PUBLIC_HOST=api.example.com -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Validate public IP certificate configuration
+        run: docker run --rm -e PUBLIC_HOST=198.51.100.10 -v "$PWD/deploy/Caddyfile.ip:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+      - name: Check certificate selection for IP clients without SNI
+        run: |
+          docker run --rm -e PUBLIC_HOST=198.51.100.10 -v "$PWD/deploy/Caddyfile.ip:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy adapt --config /etc/caddy/Caddyfile | python -c "import json,sys; servers=json.load(sys.stdin)['apps']['http']['servers'].values(); assert any(p.get('default_sni') == '198.51.100.10' for s in servers for p in s.get('tls_connection_policies', []))"
       - name: Clean smoke container
         if: always()
         run: docker rm -f hiring-smoke || true

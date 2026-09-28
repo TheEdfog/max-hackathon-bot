@@ -4,98 +4,29 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
 
 import jwt
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .bot import process_event, start_worker
+from .api_models import (ActiveBody, AnswersBody, ApplicationBody, EmployerBody, InviteBody, JobBody, Login,
+                         MaxBody, Registration, TextBody)
 from .config import Config
 from .db import Application, Audit, Job, Outbox, User, connect, serialize_writes
 from .matching import extract
 from .security import check_password, hash_password, max_identity, token_for
 from .services import answer, application_view, confirm, invite, owned_job, submit, withdraw_application
 
-ROOT = Path(__file__).resolve().parent
-
-
-class Login(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
-
-
-class Registration(Login):
-    name: str = Field(min_length=2, max_length=160)
-    company: str = Field(default="", max_length=160)
-    role: Literal["employer", "candidate"] = "candidate"
-    code: str = Field(default="", max_length=200)
-
-
-class TextBody(BaseModel):
-    text: str = Field(min_length=20, max_length=20000)
-
-
-class Requirement(BaseModel):
-    id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,40}$")
-    skill: str = Field(min_length=1, max_length=100)
-    label: str = Field(min_length=1, max_length=120)
-    type: Literal["must", "nice"] = "must"
-    source: str = Field(default="", max_length=700)
-
-
-class JobBody(BaseModel):
-    title: str = Field(min_length=3, max_length=160)
-    description: str = Field(min_length=30, max_length=20000)
-    terms: str = Field(default="", max_length=500)
-    requirements: list[Requirement] = Field(min_length=1, max_length=15)
-
-    @field_validator("requirements")
-    @classmethod
-    def unique_requirements(cls, value):
-        if len({r.id for r in value}) != len(value) or len({r.skill.lower() for r in value}) != len(value):
-            raise ValueError("Требования не должны повторяться")
-        return value
-
-
-class ApplicationBody(BaseModel):
-    resume: str = Field(min_length=40, max_length=20000)
-    consent: Literal[True]
-    name: str = Field(min_length=2, max_length=160)
-
-    @field_validator('name', 'resume', mode='before')
-    @classmethod
-    def strip_text(cls, value):
-        return value.strip() if isinstance(value, str) else value
-
-
-class AnswersBody(BaseModel):
-    answers: dict[str, str] = Field(max_length=3)
-
-    @field_validator("answers")
-    @classmethod
-    def lengths(cls, value):
-        if any(not 2 <= len(v.strip()) <= 2500 for v in value.values()):
-            raise ValueError("Ответы: от 2 до 2500 символов")
-        return {k: v.strip() for k, v in value.items()}
-
-
-class InviteBody(BaseModel):
-    message: str = Field(min_length=10, max_length=1500)
-
-
-class MaxBody(BaseModel):
-    init_data: str = Field(min_length=1, max_length=16000)
-
 
 def create_app(config=None):
     config = config or Config()
     config.validate()
+    if config.sandbox:
+        raise ValueError('Sandbox personas are supported only by the local polling launcher, not the public API')
     if config.database_url.startswith("sqlite:///data/"):
         Path("data").mkdir(exist_ok=True)
     engine, factory = connect(config.database_url)
@@ -109,7 +40,7 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.1.0", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.7.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
 
@@ -125,7 +56,7 @@ def create_app(config=None):
         except ValueError:
             return JSONResponse({"detail": "Некорректный размер запроса"}, 400)
         if length > 6 * 1024 * 1024:
-            return JSONResponse({"detail": "Максимальный размер файла — 5 МБ"}, 413)
+            return JSONResponse({"detail": "Максимальный размер файла - 5 МБ"}, 413)
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             limit = 128 * 1024 if request.url.path == '/api/max/webhook' else 6 * 1024 * 1024
             chunks, received = [], 0
@@ -135,15 +66,16 @@ def create_app(config=None):
                     return JSONResponse({'detail': 'Слишком большой запрос'}, 413)
                 chunks.append(chunk)
             request._body = b''.join(chunks)  # Starlette cached request reused by call_next.
-        if request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer':
-            key = request.client.host if request.client else "unknown"
+        integration = request.url.path.startswith('/api/integrations/') or request.url.path.startswith('/api/integration-keys')
+        if request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer' or integration:
+            key = (request.client.host if request.client else "unknown", 'integration' if integration else 'auth')
             if len(buckets) > 10000:
                 buckets.clear()
             q = buckets[key]
             while q and q[0] < time.monotonic() - 60:
                 q.popleft()
-            if len(q) >= 30:
-                return JSONResponse({"detail": "Слишком много попыток. Попробуйте через минуту."}, 429)
+            if len(q) >= (120 if integration else 30):
+                return JSONResponse({"detail": "Слишком много попыток. Попробуйте через минуту."}, 429, headers={'Retry-After': '60'})
             q.append(time.monotonic())
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -185,14 +117,15 @@ def create_app(config=None):
     def job_view(db, job):
         count = db.scalar(select(func.count()).select_from(Application).where(Application.job_id == job.id, Application.status != "withdrawn"))
         return {"id": job.id, "title": job.title, "company": job.company, "description": job.description,
-                "terms": job.terms, "requirements": job.requirements, "active": job.active, "applications": count,
+                "terms": job.terms, "requirements": job.requirements, "screening_questions": job.screening_questions,
+                "active": job.active, "applications": count,
                 "created_at": job.created_at.isoformat(), "apply_url": config.public_url + "/apply/" + job.id,
                 "max_url": f"https://max.ru/{config.bot_name}?start=apply_{job.id}" if config.bot_name else None}
 
     @app.get("/health")
     def health(db=Depends(db_session)):
         db.execute(text("SELECT 1"))
-        return {"status": "ok", "version": "1.1.0"}
+        return {"status": "ok", "version": app.version}
 
     @app.get("/api/config")
     def public_config():
@@ -252,10 +185,6 @@ def create_app(config=None):
     def me(user=Depends(current)):
         return user_view(user)
 
-    class EmployerBody(BaseModel):
-        company: str = Field(min_length=2, max_length=160)
-        code: str = Field(default="", max_length=200)
-
     @app.post("/api/me/employer")
     def enable_employer(body: EmployerBody, user=Depends(current), db=Depends(db_session)):
         serialize_writes(db)
@@ -277,7 +206,8 @@ def create_app(config=None):
 
     @app.post("/api/jobs", status_code=201)
     def create_job(body: JobBody, user=Depends(employer), db=Depends(db_session)):
-        job = Job(owner_id=user.id, title=body.title, company=user.company, description=body.description, terms=body.terms, requirements=[r.model_dump() for r in body.requirements])
+        job = Job(owner_id=user.id, title=body.title, company=user.company, description=body.description, terms=body.terms,
+                  requirements=[r.model_dump() for r in body.requirements], screening_questions=body.screening_questions)
         db.add(job)
         db.commit()
         return job_view(db, job)
@@ -285,9 +215,6 @@ def create_app(config=None):
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str, user=Depends(employer), db=Depends(db_session)):
         return job_view(db, owned_job(db, job_id, user))
-
-    class ActiveBody(BaseModel):
-        active: bool
 
     @app.patch("/api/jobs/{job_id}")
     def set_active(job_id: str, body: ActiveBody, user=Depends(employer), db=Depends(db_session)):
@@ -310,7 +237,7 @@ def create_app(config=None):
     def pdf_extract(file: UploadFile = File(...), user=Depends(current)):
         raw = file.file.read(5 * 1024 * 1024 + 1)
         if len(raw) > 5 * 1024 * 1024:
-            raise HTTPException(413, "Максимальный размер PDF — 5 МБ")
+            raise HTTPException(413, "Максимальный размер PDF - 5 МБ")
         if not raw.startswith(b"%PDF"):
             raise HTTPException(422, "Загрузите PDF с текстовым слоем")
         try:
@@ -319,6 +246,26 @@ def create_app(config=None):
         except ValueError:
             raise HTTPException(422, "Не удалось прочитать текст. Вставьте его вручную; сканы и защищённые PDF не поддерживаются.")
         return {"text": result}
+
+    @app.post('/api/jobs/{job_id}/apply-pdf', status_code=201)
+    def apply_pdf(job_id: str, file: UploadFile = File(...), consent: bool = Form(...),
+                  name: str = Form(min_length=2, max_length=160), user=Depends(current), db=Depends(db_session)):
+        from .talent_api import read_pdf, save_pdf
+        if consent is not True or not 2 <= len(name.strip()) <= 160:
+            raise HTTPException(422, 'Нужно согласие кандидата и имя от 2 до 160 символов')
+        raw = file.file.read(5 * 1024 * 1024 + 1)
+        resume = read_pdf(raw)
+        serialize_writes(db)
+        job = db.get(Job, job_id)
+        if not job:
+            raise HTTPException(404, 'Вакансия не найдена')
+        previous = db.scalar(select(Application).where(Application.job_id == job.id, Application.user_id == user.id))
+        row = submit(db, user, job, resume)
+        if not previous:
+            user.name = name.strip()
+            save_pdf(db, row, raw)
+        db.commit()
+        return application_view(db, row)
 
     @app.post("/api/jobs/{job_id}/apply", status_code=201)
     def apply(job_id: str, body: ApplicationBody, user=Depends(current), db=Depends(db_session)):
@@ -404,21 +351,22 @@ def create_app(config=None):
         await run_in_threadpool(process_event, factory, data, config)
         return {"ok": True}
 
-    @app.post("/api/auth/demo")
-    def demo(db=Depends(db_session)):
-        if not config.demo:
-            raise HTTPException(404)
-        from .seed import seed
-        user = seed(db)
-        return auth_response(user)
+    from .integrations import install_routes
+    install_routes(app, config, db_session, employer, job_view)
 
-    app.mount("/assets", StaticFiles(directory=str(ROOT / "static")), name="assets")
+    @app.get('/', include_in_schema=False)
+    def index():
+        return {'service': app.title, 'channel': 'MAX', 'docs': '/docs',
+                'bot_url': f'https://max.ru/{config.bot_name}' if config.bot_name else None}
 
-    @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str):
-        if path.startswith("api/"):
-            raise HTTPException(404)
-        return FileResponse(ROOT / "static" / "index.html")
+    @app.get('/apply/{job_id}', include_in_schema=False)
+    def open_vacancy(job_id: str, db=Depends(db_session)):
+        job = db.get(Job, job_id)
+        if not job or not job.active:
+            raise HTTPException(404, 'Вакансия не найдена или закрыта')
+        if not config.bot_name:
+            raise HTTPException(503, 'Ссылка MAX ещё не настроена')
+        return RedirectResponse(f'https://max.ru/{config.bot_name}?start=apply_{job.id}', status_code=307)
 
     return app
 
