@@ -20,8 +20,6 @@ def inspect_local(config):
         add('configuration', True, 'Configuration accepted; values are not displayed')
     except ValueError:
         add('configuration', False, 'Invalid configuration; compare with .env.example')
-    if any(c['check'] == 'configuration' and c['ok'] for c in checks):
-        add('llm', True, f'Provider: {config.llm.provider}; configured: {config.llm.ready}. No model request made.')
     add('python', sys.version_info[:2] == (3, 13), 'Release tested on Python 3.13')
     add('max_token', bool(config.bot_token), 'Set MAX_BOT_TOKEN in the private environment file')
     add('employer_code', bool(config.employer_code), 'Required for employer onboarding')

@@ -155,7 +155,6 @@ def handle_update(db, event, config):
     known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers'}
     known_commands.update({'/tests', '/test-template', '/newtest', '/archive-test', '/job-test', '/use-test', '/test-answers'})
     known_commands.update({'/import-preview', '/import-confirm', '/import-edit', '/import-add'})
-    known_commands.update({'/match', '/github', '/github-fetch'})
     if command.startswith('/') and command not in known_commands:
         reply('Команда не распознана. Откройте меню или продолжите текущий шаг обычным сообщением.')
         return
@@ -232,7 +231,7 @@ def handle_update(db, event, config):
             reply('Для отправки отклика нужно согласие.', [('Согласен, продолжить', 'Согласен'), ('Отмена', '/cancel')], bind=True)
         else:
             session.state = {**state, 'step': 'resume'}
-            reply('Пришлите текст резюме (40-20 000 символов) или публичную ссылку на текстовый PDF в Яндекс Диске. Можно прислать GitHub-профиль или репозиторий. Ссылки сначала покажем для проверки. Работодатель сможет отдельно запросить публичный GitHub-обзор по ссылке из вашего отклика: профиль, метаданные и README, без кода проектов. Сканы и закрытые файлы не поддерживаются. Не включайте паспортные данные.')
+            reply('Пришлите текст резюме (40-20 000 символов) или публичную ссылку на текстовый PDF в Яндекс Диске. Распознанный текст сначала покажем для проверки. Сканы и закрытые файлы не поддерживаются. Не включайте паспортные данные.')
     elif state.get('step') == 'resume':
         if text.startswith(('https://', 'http://')) and '\n' not in text and ' ' not in text:
             from .imports import queue_import

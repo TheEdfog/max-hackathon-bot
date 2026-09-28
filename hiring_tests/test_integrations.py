@@ -174,7 +174,7 @@ def test_data_engineering_vocabulary_and_evidence_aliases():
     assert rows['spark']['state'] == 'mentioned'
     assert rows['etl']['state'] == 'mentioned'
     assert rows['data quality']['state'] == 'mentioned'
-    assert rows['greenplum']['state'] == 'negative'
+    assert rows['greenplum']['state'] == 'review'
     assert rows['hadoop']['state'] == 'unknown'
     assert all(s in resume for row in rows.values() for s in row['snippets'])
 

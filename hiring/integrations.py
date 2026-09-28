@@ -6,14 +6,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Generic, Literal, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
-from .db import Application, ApplicationReview, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
+from .db import Application, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
 from .services import application_view, invite, owned_job
 
-Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'applications:write', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
+Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
 READ_SCOPES = ['jobs:read', 'applications:read', 'events:read', 'metrics:read']
 T = TypeVar('T')
 
@@ -136,8 +136,6 @@ class KeyCreate(BaseModel):
             raise ValueError('Scopes must be unique')
         if 'applications:pii' in value and 'applications:read' not in value:
             raise ValueError('applications:pii requires applications:read')
-        if 'applications:write' in value and 'applications:pii' not in value:
-            raise ValueError('applications:write requires applications:pii')
         return value
 
 
@@ -165,7 +163,7 @@ def issue_key(db, owner, body):
 
 def install_routes(app, config, db_session, employer, job_view):
     from .api_models import JobBody, InviteBody
-    from .talent_api import ReviewStage, install_talent_routes
+    from .talent_api import install_talent_routes
 
     class JobPut(JobBody):
         model_config = {'extra': 'forbid'}
@@ -295,14 +293,15 @@ def install_routes(app, config, db_session, employer, job_view):
         return job_payload(db, row)
 
     @router.get('/applications', response_model=Page[AppSummary | Tombstone])
-    def list_applications(job_id: str | None = None,
+    def list_applications(request: Request, job_id: str | None = None,
                           status: Literal['clarifying', 'ready', 'invited', 'confirmed', 'withdrawn'] | None = None,
-                          review_stage: ReviewStage | None = None,
                           created_from: datetime | None = None, created_before: datetime | None = None,
                           after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'),
                           limit: int = Query(50, ge=1, le=100),
                           identity=Depends(require('applications:read')), db=Depends(db_session)):
         query = select(Application).join(Job).where(Job.owner_id == identity[1].id)
+        if 'review_stage' in request.query_params:
+            raise HTTPException(410, 'Фильтр внутренних HR-этапов удалён. Используйте status.')
         for value in (created_from, created_before):
             if value is not None and value.utcoffset() is None:
                 raise HTTPException(422, 'Укажите часовой пояс даты: Z или +03:00')
@@ -312,11 +311,6 @@ def install_routes(app, config, db_session, employer, job_view):
             query = query.where(Application.created_at >= created_from.astimezone(timezone.utc))
         if created_before:
             query = query.where(Application.created_at < created_before.astimezone(timezone.utc))
-        if review_stage:
-            if 'applications:pii' not in identity[0].scopes:
-                raise HTTPException(403, 'Фильтрация HR-этапов требует applications:pii')
-            query = query.outerjoin(ApplicationReview).where(Application.status != 'withdrawn',
-                     func.coalesce(ApplicationReview.stage, 'new') == review_stage)
         if job_id:
             owned_job(db, job_id, identity[1])
             query = query.where(Application.job_id == job_id)

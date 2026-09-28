@@ -1,0 +1,17 @@
+# Public IP certificates require Let's Encrypt's short-lived profile.
+https://{$PUBLIC_HOST} {
+    tls {
+        issuer acme {
+            dir https://acme-v02.api.letsencrypt.org/directory
+            profile shortlived
+        }
+    }
+    request_body {
+        max_size 6MB
+    }
+    reverse_proxy api:8000
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

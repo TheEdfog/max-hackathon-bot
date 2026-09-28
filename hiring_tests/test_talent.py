@@ -16,7 +16,7 @@ from test_employer_bot import send
 import httpx
 from hiring.sources import PublicReader
 
-ALL = ['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'applications:write',
+ALL = ['jobs:read', 'jobs:write', 'applications:read', 'applications:pii',
        'tests:read', 'tests:write', 'events:read']
 TEST = {'title': 'SQL practice', 'questions': [{'text': 'Explain how you would find duplicates in SQL.', 'rubric': 'GROUP BY + HAVING'}]}
 RESUME = 'Python PostgreSQL: built a synthetic catalogue with tests and documentation.'
@@ -45,18 +45,16 @@ def test_long_pdf_is_rejected_not_silently_truncated():
 
 @pytest.mark.parametrize('text,skill,state', [
     ('Разработал сервис на питоне.', 'python', 'mentioned'), ('Использовал postres для каталога.', 'postgresql', 'mentioned'),
-    ('Использовал postres для каталога.', 'sql', 'inferred'), ('Использовал SQL для каталога.', 'postgresql', 'unknown'),
+    ('Использовал postres для каталога.', 'sql', 'unknown'), ('Использовал SQL для каталога.', 'postgresql', 'unknown'),
     ('Нет опыта PostgreSQL.', 'sql', 'unknown'), ('Хочу изучить PostgreSQL.', 'sql', 'unknown'),
-    ('Использовал PostgreSQL, но SQL не знаю.', 'sql', 'negative'),
-    ('Работал с NoSQL.', 'sql', 'unknown'), ('Использовал MySQL.', 'sql', 'inferred'),
-    ('Использовал Python, но Docker не знаю.', 'python', 'mentioned'),
+    ('Использовал PostgreSQL, но SQL не знаю.', 'sql', 'review'),
+    ('Работал с NoSQL.', 'sql', 'unknown'), ('Использовал MySQL.', 'sql', 'unknown'),
+    ('Использовал Python, но Docker не знаю.', 'python', 'review'),
 ])
 def test_directional_aliases(text, skill, state):
     result = evidence(text, {}, [{'id': 'r', 'skill': skill, 'label': skill, 'type': 'must'}])
     assert result['requirements'][0]['state'] == state
-    if state == 'inferred':
-        assert result['covered'] == result['inferred'] == 1 and result['direct_covered'] == 0
-        assert result['requirements'][0]['snippets'][0] in text
+    assert 'coverage' not in result and 'inferred' not in result
 
 
 def test_alias_extraction_and_duplicates(client):
@@ -71,11 +69,11 @@ def test_related_technology_in_clarification():
     requirements = [{'id': 'sql', 'skill': 'sql', 'label': 'SQL', 'type': 'must'}]
     answer = 'Создал таблицы в postres для учебного каталога.'
     result = evidence('Разрабатывал учебный каталог книг.', {'sql': answer}, requirements)
-    assert result['requirements'][0]['state'] == 'inferred'
-    assert result['requirements'][0]['related'][0]['source'] == 'answer'
+    assert result['requirements'][0]['state'] == 'review'
+    assert 'related' not in result['requirements'][0]
     assert result['requirements'][0]['answer'] == answer
     conflict = evidence('SQL не знаю.', {'sql': answer}, requirements)
-    assert conflict['requirements'][0]['state'] == 'conflict'
+    assert conflict['requirements'][0]['state'] == 'review'
 
 
 def test_testbank_snapshot_rubric_isolation_and_versioning(client):
@@ -122,28 +120,15 @@ def test_pdf_original_review_and_withdrawal(client):
     assert pdf.content == raw and pdf.headers['X-Content-SHA256'] == hashlib.sha256(raw).hexdigest()
     assert 'private-name' not in str(pdf.headers) and pdf.headers['cache-control'] == 'no-store'
     assert RESUME in client.get(path + '/resume.txt', headers=auth).text
-    review = {'stage': 'shortlisted', 'note': 'Synthetic note', 'tags': ['python'], 'expected_version': 0}
-    assert client.patch(path + '/review', headers=reader, json=review).status_code == 403
-    assert client.patch(path + '/review', headers=foreign, json=review).status_code == 404
-    assert client.patch(path + '/review', headers=auth, json=review).json()['version'] == 1
-    assert client.patch(path + '/review', headers=auth, json=review).status_code == 409
-    assert client.get(path + '/review', headers=auth).json()['stage'] == 'shortlisted'
+    # Notes from pre-1.7 databases must still be erased on withdrawal.
+    with client.app.state.factory() as db:
+        db.add(ApplicationReview(application_id=aid, note='Legacy synthetic note'))
+        db.commit()
     client.delete('/api/applications/' + aid, headers=candidate).raise_for_status()
     assert client.get(path + '/resume.pdf', headers=auth).status_code == 410
-    assert client.get(path + '/review', headers=auth).status_code == 410
+    assert client.get(path + '/review', headers=auth).status_code == 404
     with client.app.state.factory() as db:
         assert db.get(ResumeDocument, aid) is None and db.get(ApplicationReview, aid) is None
-
-
-def test_draft_no_pii_no_publication(client):
-    auth, _ = key(client, register(client, 'owner', 'employer'), ALL)
-    text = 'Synthetic Person, fictional@example.com. Использовал Python. Нет опыта Docker.'
-    response = client.post(PREFIX + '/jobs/draft-from-resume', headers=auth, json={'resume': text})
-    assert response.status_code == 200, response.text
-    assert not response.json()['published'] and response.json()['review_required']
-    assert 'fictional@' not in response.text and 'Synthetic Person' not in response.text
-    assert [r['skill'] for r in response.json()['requirements']] == ['python']
-    assert client.get(PREFIX + '/jobs', headers=auth).json()['items'] == []
 
 
 @pytest.mark.parametrize('url', ['http://github.com/user', 'https://127.0.0.1/test.pdf', 'https://github.com.evil.test/user',
@@ -155,12 +140,12 @@ def test_unsafe_urls_rejected(url):
 
 
 def test_source_contracts_and_mail_fallback():
-    with pytest.raises(SourceError, match='отключён'):
+    with pytest.raises(SourceError, match='только публичные PDF'):
         source_kind('https://cloud.mail.ru/public/abc/def')
     class LoginPage:
         def get(self, *args, **kwargs):
             return b'<html>Login required</html>'
-    with pytest.raises(SourceError, match='отключён'):
+    with pytest.raises(SourceError, match='только публичные PDF'):
         import_source('https://cloud.mail.ru/public/abc/def', LoginPage())
     assert allowed_download('downloader.disk.yandex.ru', 'yandex')
     assert not allowed_download('downloader.disk.yandex.ru.evil.test', 'yandex')
@@ -186,16 +171,16 @@ def test_public_reader_redirect_dns_size_and_no_auth(monkeypatch):
         return httpx.Response(302, headers={'location': 'https://127.0.0.1/private'})
     monkeypatch.setattr('hiring.sources.httpx.Client', lambda **kw: real_client(**kw, transport=httpx.MockTransport(response)))
     with pytest.raises(SourceError, match='неподдерживаемый'):
-        PublicReader().get('https://api.github.com/users/synthetic/repos', 'github')
+        PublicReader().get('https://cloud-api.yandex.net/v1/disk/public/resources/download', 'yandex')
     assert len(calls) == 1
     monkeypatch.setattr('hiring.sources.socket.getaddrinfo', lambda *a, **k: [(2, 1, 6, '', ('127.0.0.1', 443))])
     with pytest.raises(SourceError, match='недоступен'):
-        PublicReader().get('https://api.github.com/users/synthetic/repos', 'github')
+        PublicReader().get('https://cloud-api.yandex.net/v1/disk/public/resources/download', 'yandex')
     assert len(calls) == 1
     monkeypatch.setattr('hiring.sources.socket.getaddrinfo', lambda *a, **k: [(2, 1, 6, '', ('93.184.216.34', 443))])
     monkeypatch.setattr('hiring.sources.httpx.Client', lambda **kw: real_client(**kw, transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b'x' * 30))))
     with pytest.raises(SourceError, match='слишком большой'):
-        PublicReader().get('https://api.github.com/users/synthetic/repos', 'github', limit=20)
+        PublicReader().get('https://cloud-api.yandex.net/v1/disk/public/resources/download', 'yandex', limit=20)
 
 
 def test_no_pdf_fabrication_and_parse_scope(client):
@@ -211,26 +196,12 @@ def test_no_pdf_fabrication_and_parse_scope(client):
     assert parsed.status_code == 200 and not parsed.json()['stored']
 
 
-def test_github_metadata_only_and_source_api(client, monkeypatch):
-    class Github:
-        def json(self, url, provider):
-            if url.endswith('/languages'):
-                return {'Python': 123}
-            return [{'full_name': 'SyntheticExample/project', 'private': False, 'fork': True, 'description': 'Public synthetic project'}]
-    result = import_source('https://github.com/SyntheticExample', Github())
-    assert 'форк' in result.text and 'Python' in result.text and 'не доказывают' in result.warning
-    monkeypatch.setattr('hiring.sources.import_source', lambda url: result)
-    auth, _ = key(client, register(client, 'owner', 'employer'), ALL)
-    data = client.post(PREFIX + '/sources/preview', headers=auth, json={'url': 'https://github.com/SyntheticExample'})
-    assert data.status_code == 200 and not data.json()['stored']
-
-
 def candidate_import(client, uid=300):
     employer = register(client, 'owner', 'employer')
     jid = job(client, employer)
     send(client, uid, '/start apply_' + jid, 500)
     send(client, uid, 'Согласен', 501)
-    send(client, uid, 'https://github.com/SyntheticExample', 502)
+    send(client, uid, 'https://disk.yandex.ru/d/synthetic', 502)
     with client.app.state.factory() as db:
         row = db.scalar(select(ImportTask))
         assert row.status == 'pending'
@@ -261,7 +232,7 @@ def test_import_cancel_during_download_and_expiry(client):
     def slow_source(url):
         # If fetch held the write transaction, this independent bot event would deadlock.
         send(client, 300, '/cancel', 506)
-        return SourceResult(RESUME, 'github', 'Synthetic')
+        return SourceResult(RESUME, 'yandex', 'Synthetic')
     deliver_import(client.app.state.factory, slow_source)
     with client.app.state.factory() as db:
         assert db.get(ImportTask, tid).status == 'cancelled'
@@ -279,7 +250,7 @@ def test_import_lease_recovery_and_expired_preview_not_sent(client):
         task = db.get(ImportTask, tid)
         task.status, task.lease_until = 'working', now() - timedelta(seconds=1)
         db.commit()
-    assert deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'github', 'Synthetic'))
+    assert deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'yandex', 'Synthetic'))
     with client.app.state.factory() as db:
         task = db.get(ImportTask, tid)
         assert task.status == 'ready'

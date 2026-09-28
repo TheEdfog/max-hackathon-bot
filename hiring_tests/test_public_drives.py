@@ -9,7 +9,7 @@ def test_unapproved_drives_never_make_requests(url):
         def get(self, *args, **kwargs):
             pytest.fail('Disabled provider must not make a request')
         json = get
-    with pytest.raises(SourceError, match='отключён'):
+    with pytest.raises(SourceError, match='только публичные PDF'):
         import_source(url, Reader())
 
 
@@ -29,5 +29,5 @@ def test_mail_dispatcher_to_arbitrary_url_denied_before_fetch():
     class Reader:
         def get(self,*args,**kwargs):
             return b'{"dispatcher":{"weblink_get":{"url":"https://evil.test/public/path"}}}'
-    with pytest.raises(SourceError,match='отключён'):
+    with pytest.raises(SourceError,match='только публичные PDF'):
         import_source('https://cloud.mail.ru/public/abc/def',Reader())

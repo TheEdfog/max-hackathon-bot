@@ -1,0 +1,5 @@
+# Add after compose.production.yml only when using a public IP certificate.
+services:
+  proxy:
+    volumes:
+      - ./deploy/Caddyfile.ip:/etc/caddy/Caddyfile:ro

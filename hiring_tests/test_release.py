@@ -90,7 +90,7 @@ def test_answer_buttons_bound_to_question_and_skip_is_not_negative(client):
         from hiring.services import application_view
         view = application_view(db, db.get(Application, aid))
         assert view['status'] == 'ready'
-        assert [r['state'] for r in view['assessment']['requirements']] == ['review', 'negative']
+        assert [r['state'] for r in view['assessment']['requirements']] == ['review', 'review']
 
 
 def test_unknown_command_does_not_become_vacancy_text(client):

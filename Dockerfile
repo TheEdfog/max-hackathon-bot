@@ -7,7 +7,6 @@ COPY core/utils.py ./core/utils.py
 COPY apps/web/services/vacancy_parser_service.py ./apps/web/services/vacancy_parser_service.py
 COPY hiring ./hiring
 COPY scripts/smoke_hiring.py ./scripts/smoke_hiring.py
-COPY scripts/smoke_llm.py ./scripts/smoke_llm.py
 RUN mkdir -p /app/data && chown -R bot:bot /app/data
 USER bot
 

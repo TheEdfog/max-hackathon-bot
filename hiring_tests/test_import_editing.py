@@ -42,7 +42,7 @@ def test_edit_requires_confirmation_and_invalidates_previous_buttons(client, mod
 @pytest.mark.parametrize('mode,text', [('edit', 'too short'), ('edit', ' ' * 40), ('add', 'x'), ('add', 'x' * 20000)])
 def test_invalid_edit_does_not_destroy_original(client, mode, text):
     tid, _ = candidate_import(client)
-    deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'github', 'Synthetic'))
+    deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'yandex', 'Synthetic'))
     send(client, 300, '/import-' + mode + ' ' + tid, 'size-0')
     send(client, 300, text, 'size-1')
     with client.app.state.factory() as db:
@@ -58,7 +58,7 @@ def test_invalid_edit_does_not_destroy_original(client, mode, text):
 
 def test_foreign_edit_expiry_and_cancel_cannot_send(client):
     tid, _ = candidate_import(client)
-    deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'github', 'Synthetic'))
+    deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'yandex', 'Synthetic'))
     send(client, 301, '/import-edit ' + tid, 'foreign-0')
     send(client, 301, 'A completely different synthetic profile with no real candidate data.', 'foreign-1')
     send(client, 300, '/import-edit ' + tid, 'foreign-2')
@@ -77,7 +77,7 @@ def test_foreign_edit_expiry_and_cancel_cannot_send(client):
 
 def test_opening_vacancy_again_clears_abandoned_import(client):
     tid, jid = candidate_import(client)
-    deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'github', 'Synthetic'))
+    deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'yandex', 'Synthetic'))
     send(client, 300, '/start apply_' + jid, 'new-flow')
     with client.app.state.factory() as db:
         task = db.get(ImportTask, tid)

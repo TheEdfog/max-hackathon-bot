@@ -59,7 +59,7 @@ def handle_demo(session, text, reply):
     elif stage == 4:
         assessment = evidence(RESUME, {'docker': state['answer']}, REQUIREMENTS)
         docker = assessment['requirements'][1]
-        label = 'сообщил об отсутствии опыта' if docker['state'] == 'negative' else 'сведения не уточнены, требуется просмотр'
+        label = 'нужно уточнить; ниже приведён ответ кандидата'
         content = f'Вы снова работодатель. Карточка:\n\nPython - указан в резюме.\nЦитата: «{RESUME}»\n\nDocker - {label}.\nОтвет: «{state["answer"]}»\n\nРейтинга людей и автоматического отказа нет. Вы можете пригласить кандидата, даже если опыта с Docker нет.'
         buttons = [('Подготовить приглашение', '/demo_next 5')]
     elif stage == 5:

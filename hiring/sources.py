@@ -39,18 +39,12 @@ def parsed_url(value):
 
 def source_kind(value):
     p = parsed_url(value)
-    if p.hostname == 'github.com' and re.fullmatch(r'/[A-Za-z0-9-]{1,39}(?:/[A-Za-z0-9_.-]{1,100})?/?', p.path) and p.path.strip('/').split('/')[-1] not in ('.', '..'):
-        return 'github'
     if p.hostname in ('disk.yandex.ru', 'disk.yandex.com', 'yadi.sk') and re.fullmatch(r'/[di]/[A-Za-z0-9_-]+/?', p.path):
         return 'yandex'
-    if p.hostname in ('drive.google.com', 'cloud.mail.ru'):
-        raise SourceError('Импорт Google Drive и Mail.ru отключён до согласования с организаторами. Вставьте текст, используйте Яндекс Диск или загрузите PDF через API.')
-    raise SourceError('Поддерживаются ссылки на GitHub и файлы Яндекс Диска. Для остальных источников загрузите PDF через API или вставьте текст.')
+    raise SourceError('Поддерживаются только публичные PDF на Яндекс Диске. Для остальных источников загрузите PDF через API или вставьте текст.')
 
 
 def allowed_download(host, provider):
-    if provider == 'github':
-        return host == 'api.github.com'
     if provider == 'yandex':
         return host == 'cloud-api.yandex.net' or bool(re.fullmatch(r'[a-z0-9-]+\.(?:disk\.yandex\.(?:ru|com|net)|storage\.yandex\.net)', host))
     return False
@@ -100,46 +94,10 @@ class PublicReader:
         return json.loads(self.get(url, provider, 512 * 1024, optional=optional))
 
 
-def github_import(url, reader):
-    parts = parsed_url(url).path.strip('/').split('/')
-    owner = parts[0]
-    root = 'https://api.github.com'
-    if len(parts) == 2:
-        repo = reader.json(f'{root}/repos/{owner}/{parts[1]}', 'github')
-        repos = [repo]
-    else:
-        # Five bounded items, no personal profile fields or email/contact scraping.
-        repos = reader.json(f'{root}/users/{owner}/repos?sort=updated&per_page=5&type=owner', 'github')
-    if not isinstance(repos, list):
-        raise SourceError('Не удалось прочитать публичные репозитории GitHub.')
-    lines = ['Публичное портфолио GitHub: ' + url,
-             'Описание репозиториев не подтверждает личный вклад или владение навыками.']
-    for repo in repos[:5]:
-        if not isinstance(repo, dict) or repo.get('private') is not False:
-            continue
-        name = repo.get('full_name', '')
-        if not re.fullmatch(r'[A-Za-z0-9-]{1,39}/[A-Za-z0-9_.-]{1,100}', name):
-            continue
-        label = 'форк' if repo.get('fork') else 'репозиторий'
-        lines.append(f'\n{label}: https://github.com/{name}')
-        languages = reader.json(f'{root}/repos/{name}/languages', 'github')
-        if isinstance(languages, dict):
-            lines.append('Языки файлов по GitHub API: ' + ', '.join(str(k)[:60] for k in list(languages)[:10]))
-        description = repo.get('description')
-        if isinstance(description, str):
-            lines.append('Описание автора: ' + description[:600])
-    if len(lines) == 2:
-        raise SourceError('Нет доступных публичных репозиториев для импорта.')
-    return SourceResult('\n'.join(lines)[:12000], 'github',
-                        'Проверьте текст и укажите свой вклад. Языки репозитория не доказывают опыт кандидата. Прочитано не более 5 репозиториев.')
-
-
 def _import_source(url, reader=None):
     provider = source_kind(url)
     reader = reader or PublicReader()
     try:
-        if provider == 'github':
-            return github_import(url, reader)
         if provider == 'yandex':
             result = reader.json('https://cloud-api.yandex.net/v1/disk/public/resources/download?' +
                                  urlencode({'public_key': url}), provider)

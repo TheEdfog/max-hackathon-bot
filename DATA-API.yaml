@@ -251,9 +251,9 @@ checks:
           status: {const: ready}
           assessment:
             type: object
-            required: [covered, total]
+            required: [mentioned, total]
             properties:
-              covered: {const: 2}
+              mentioned: {const: 2}
               total: {const: 2}
     timeoutMs: 5000
     repeatable: false
@@ -450,26 +450,10 @@ checks:
     timeoutMs: 5000
     repeatable: true
 
-  - id: integration-compatibility-privacy
-    name: Ключ без PII не получает оценку с цитатами
+  - id: integration-text-privacy
+    name: Ключ без PII не получает текст резюме
     method: GET
-    path: /api/integrations/v1/applications/{app_id}/compatibility
-    role: public
-    dependsOn: [integration-key, apply]
-    request:
-      path: {app_id: "${applicationId}"}
-      headers: {Authorization: "Bearer ${integrationToken}"}
-    expected:
-      statusCodes: [403]
-      contentType: application/json
-      requiredFields: [detail]
-    timeoutMs: 5000
-    repeatable: true
-
-  - id: integration-github-privacy
-    name: Ключ без PII не получает ссылки и GitHub-обзор кандидата
-    method: GET
-    path: /api/integrations/v1/applications/{app_id}/github
+    path: /api/integrations/v1/applications/{app_id}/resume.txt
     role: public
     dependsOn: [integration-key, apply]
     request:

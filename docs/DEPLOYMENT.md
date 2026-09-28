@@ -2,7 +2,7 @@
 
 Сервер пока не настроен. Этот документ — инструкция, а не подтверждение доступного production.
 
-Коротко, какие сведения и доступы нужны от владельца: [SUBMISSION-ACCESS.md](SUBMISSION-ACCESS.md). Модель, endpoint и бюджеты задаются через [LLM.md](LLM.md), пересборка Docker для смены модели не нужна. Базовый сценарий работает при `HIRING_LLM_PROVIDER=disabled`.
+Коротко, какие сведения и доступы нужны от владельца: [SUBMISSION-ACCESS.md](SUBMISSION-ACCESS.md). С версии 1.7 внешние модели удалены; ключи LLM на сервер копировать не нужно.
 
 Подходит для Яндекс Cloud, Cloud.ru и обычного VPS с Docker. Актуальная проверка пробных предложений: [HOSTING-OPTIONS-2026-09-27.md](HOSTING-OPTIONS-2026-09-27.md). Создание платёжного аккаунта и выбор тарифа выполняет владелец.
 
@@ -23,6 +23,10 @@ docker compose --env-file .env.hiring -f docker-compose.yml -f compose.productio
 ```
 
 Caddy получает доверенный сертификат для PUBLIC_HOST и проксирует в API. Проверить `https://домен/health` и `https://домен/openapi.json` с другого компьютера. Не использовать самоподписной сертификат. Для MAX webhook нужен HTTPS на 443.
+
+### Если есть только публичный IPv4
+
+Задайте `PUBLIC_HOST=публичный_IP` и `PUBLIC_URL=https://публичный_IP`, добавьте `-f compose.ip.yml` после production-файла. Этот вариант явно выбирает Let's Encrypt и профиль `shortlived`, а не внутренний самоподписной сертификат Caddy. Нужны открытые снаружи TCP 80/443; сертификаты автоматически обновляются, volume Caddy должен сохраняться. [IP-сертификаты Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability), [настройка профиля Caddy](https://caddyserver.com/docs/caddyfile/directives/tls#issuers). Проверка синтаксиса не подтверждает выдачу сертификата или приём webhook MAX.
 
 Остановить локальный polling. Команда ниже сначала только показывает план, затем регистрирует webhook после проверки здоровья. Она не удаляет чужие подписки:
 

@@ -65,7 +65,7 @@ def test_full_hiring_cycle(client):
     app = client.post(f"/api/applications/{aid}/answers", headers=candidate,
                       json={"answers": {"pg": "Использовал PostgreSQL в учебном проекте: создал схему и запросы."}}).json()
     assert app["status"] == "ready"
-    assert app["assessment"]["covered"] == 2
+    assert app["assessment"]["mentioned"] == 2
     rows = client.get(f"/api/jobs/{jid}/applications", headers=employer).json()
     assert len(rows) == 1 and rows[0]["answers"]["pg"]
     assert client.post(f"/api/applications/{aid}/invite", headers=employer, json={"message": "Приглашаем обсудить вакансию завтра в 15:00."}).json()["status"] == "invited"
@@ -164,11 +164,11 @@ def test_production_configuration_fails_closed():
 
 @pytest.mark.parametrize("resume,answer,state", [
     ("Python использовал в проекте", "", "mentioned"),
-    ("Не работал с Python", "", "negative"),
-    ("Python использовал. Не работал с Python.", "", "conflict"),
+    ("Не работал с Python", "", "review"),
+    ("Python использовал. Не работал с Python.", "", "review"),
     ("Работал с Java", "", "unknown"),
-    ("Java", "Python использовал, а Docker не использовал", "answered"),
-    ("Java", "нет опыта", "negative"),
+    ("Java", "Python использовал, а Docker не использовал", "review"),
+    ("Java", "нет опыта", "review"),
     ("Java", "Да, есть такой опыт", "review"),
 ])
 def test_evidence_is_explainable(resume, answer, state):
