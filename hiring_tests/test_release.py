@@ -9,7 +9,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from sqlalchemy import func, select
 from hiring.db import Application, BotSession, Job, Outbox, User
 from hiring.pdf_extract import extract_pdf
-from hiring.runtime_lock import polling_lock
+from hiring.polling import polling_lock
 from test_buttons_delivery import button, click
 from test_employer_bot import send
 from test_product import client, job, register

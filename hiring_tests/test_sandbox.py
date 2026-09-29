@@ -12,8 +12,7 @@ from hiring.config import Config
 from hiring.db import Application, BotAction, BotSession, Job, Outbox, SandboxSwitch, User, connect
 from hiring.main import create_app
 from hiring.outbox import deliver_one
-from hiring.polling import PollCursor, open_cursor_store, transport_url
-from hiring.runtime_lock import polling_lock
+from hiring.polling import PollCursor, open_cursor_store, polling_lock, transport_url
 from hiring.sandbox import check_storage
 from test_employer_bot import send
 from test_buttons_delivery import click

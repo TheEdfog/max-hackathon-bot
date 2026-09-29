@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, create_engine, event, inspect, text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy import (
+    JSON, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String,
+    Text, UniqueConstraint, create_engine, event, inspect, text,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
 def uid():
@@ -45,17 +48,50 @@ class Job(Base):
 
 class Application(Base):
     __tablename__ = "hiring_applications"
-    __table_args__ = (UniqueConstraint("job_id", "user_id", name="uq_hiring_application"),)
+    __table_args__ = (
+        UniqueConstraint("job_id", "user_id", name="uq_hiring_application"),
+        Index("ix_hiring_applications_user_resume", "user_id", "resume_sha256"),
+    )
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     job_id: Mapped[str] = mapped_column(ForeignKey("hiring_jobs.id"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("hiring_users.id"), index=True)
     resume: Mapped[str] = mapped_column(Text)
+    resume_sha256: Mapped[str] = mapped_column(String(64), default="")
+    normalized_skills: Mapped[dict] = mapped_column(JSON, default=dict)
     answers: Mapped[dict] = mapped_column(JSON, default=dict)
     questions: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(24), default="clarifying")
     invitation: Mapped[str] = mapped_column(Text, default="")
     consent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AIReview(Base):
+    """Optional model analysis and evidence of the candidate's separate consent."""
+    __tablename__ = "hiring_ai_reviews"
+    application_id: Mapped[str] = mapped_column(ForeignKey("hiring_applications.id"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default="declined")
+    provider_id: Mapped[str] = mapped_column(String(80), default="")
+    provider_name: Mapped[str] = mapped_column(String(160), default="")
+    processor_name: Mapped[str] = mapped_column(String(200), default="")
+    base_url: Mapped[str] = mapped_column(Text, default="")
+    api_key_env: Mapped[str] = mapped_column(String(80), default="")
+    model: Mapped[str] = mapped_column(String(160), default="")
+    resume_sha256: Mapped[str] = mapped_column(String(64), default="")
+    decision: Mapped[str] = mapped_column(String(12), default="")
+    decision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consent_version: Mapped[str] = mapped_column(String(40), default="")
+    consent_text: Mapped[str] = mapped_column(Text, default="")
+    consent_text_sha256: Mapped[str] = mapped_column(String(64), default="")
+    notice_url: Mapped[str] = mapped_column(Text, default="")
+    notice_version: Mapped[str] = mapped_column(String(80), default="")
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str] = mapped_column(String(40), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class AssessmentTemplate(Base):
@@ -204,6 +240,34 @@ class IntegrationEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+def _collect_integration_changes(db, _flush_context, _instances):
+    for row in list(db.new) + list(db.dirty):
+        if not isinstance(row, (Job, Application)):
+            continue
+        fresh = row in db.new
+        if not fresh and not db.is_modified(row, include_collections=True):
+            continue
+        if not row.id:
+            row.id = uid()
+        if isinstance(row, Job):
+            owner, kind = row.owner_id, 'job.created' if fresh else 'job.updated'
+        else:
+            job = db.get(Job, row.job_id)
+            if not job:
+                job = next((item for item in db.new if isinstance(item, Job) and item.id == row.job_id), None)
+            if not job:
+                continue  # The FK constraint rejects an invalid application.
+            owner = job.owner_id
+            kind = 'application.created' if fresh else (
+                'application.withdrawn' if row.status == 'withdrawn' else 'application.updated')
+        db.add(IntegrationEvent(owner_id=owner, kind=kind, resource_id=row.id))
+
+
+def _install_integration_events():
+    if not event.contains(Session, 'before_flush', _collect_integration_changes):
+        event.listen(Session, 'before_flush', _collect_integration_changes)
+
+
 def connect(url):
     kwargs = {"connect_args": {"check_same_thread": False, "timeout": 20}} if url.startswith("sqlite") else {}
     engine = create_engine(url, **kwargs)
@@ -215,7 +279,34 @@ def connect(url):
     Base.metadata.create_all(engine)
     # Additive v1 -> v2 migration. Startup is single-process; existing data is kept.
     columns = {c['name'] for c in inspect(engine).get_columns('hiring_outbox')}
+    ai_columns = {c['name'] for c in inspect(engine).get_columns('hiring_ai_reviews')}
     with engine.begin() as connection:
+        application_columns = {c['name'] for c in inspect(engine).get_columns('hiring_applications')}
+        missing_normalization = 'normalized_skills' not in application_columns
+        missing_resume_hash = 'resume_sha256' not in application_columns
+        if missing_normalization:
+            connection.execute(text("ALTER TABLE hiring_applications ADD COLUMN normalized_skills JSON NOT NULL DEFAULT '{}'"))
+        if missing_resume_hash:
+            connection.execute(text("ALTER TABLE hiring_applications ADD COLUMN resume_sha256 VARCHAR(64) NOT NULL DEFAULT ''"))
+        if missing_normalization or missing_resume_hash:
+            from .matching import normalize_resume, resume_digest
+            last_id = ''
+            while True:
+                rows = connection.execute(text(
+                    "SELECT id, resume FROM hiring_applications "
+                    "WHERE resume != '' AND id > :last_id ORDER BY id LIMIT 100"
+                ), {'last_id': last_id}).all()
+                if not rows:
+                    break
+                for application_id, resume in rows:
+                    values = {}
+                    if missing_normalization:
+                        values['normalized_skills'] = normalize_resume(resume)
+                    if missing_resume_hash:
+                        values['resume_sha256'] = resume_digest(resume)
+                    connection.execute(Application.__table__.update()
+                                       .where(Application.id == application_id).values(**values))
+                    last_id = application_id
         for name, size in (('application_id', 32), ('callback_id', 256), ('import_id', 32)):
             if name not in columns:
                 connection.execute(text(f'ALTER TABLE hiring_outbox ADD COLUMN {name} VARCHAR({size})'))
@@ -223,8 +314,14 @@ def connect(url):
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN screening_questions JSON NOT NULL DEFAULT '[]'"))
         if 'test_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN test_questions JSON NOT NULL DEFAULT '[]'"))
-    from .integration_events import install_events
-    install_events()
+        if 'expires_at' not in ai_columns:
+            connection.execute(text('ALTER TABLE hiring_ai_reviews ADD COLUMN expires_at DATETIME'))
+    application_indexes = {index['name'] for index in inspect(engine).get_indexes('hiring_applications')}
+    if 'ix_hiring_applications_user_resume' not in application_indexes:
+        resume_index = next(index for index in Application.__table__.indexes
+                            if index.name == 'ix_hiring_applications_user_resume')
+        resume_index.create(bind=engine)
+    _install_integration_events()
     return engine, sessionmaker(engine, expire_on_commit=False)
 
 

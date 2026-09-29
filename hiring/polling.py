@@ -2,8 +2,9 @@
 import argparse
 import json
 import logging
+import os
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import httpx
@@ -17,8 +18,43 @@ from .config import Config
 from .db import Base, connect
 from .bot import process_event, start_worker
 from .max_client import tls_context
-from .runtime_lock import polling_lock
 from .sandbox import check_storage
+
+
+@contextmanager
+def polling_lock(database_url):
+    """Allow one long-polling process per persistent SQLite database."""
+    source = make_url(database_url)
+    if source.get_backend_name() != 'sqlite' or not source.database or source.database == ':memory:':
+        raise ValueError('Polling requires a persistent SQLite database')
+    path = Path(source.database).resolve().with_suffix('.polling.lock')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stream = path.open('a+b')
+    locked = False
+    try:
+        if path.stat().st_size == 0:
+            stream.write(b'0')
+            stream.flush()
+        stream.seek(0)
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            locked = True
+        except OSError as exc:
+            raise RuntimeError('Polling is already running for this database') from exc
+        yield
+    finally:
+        if locked:
+            stream.seek(0)
+            if os.name == 'nt':
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+        stream.close()  # The OS releases the lock on crashes; keep the harmless file.
 
 
 class PollCursor(Base):

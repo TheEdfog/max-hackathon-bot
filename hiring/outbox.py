@@ -78,10 +78,33 @@ def start_worker(factory, config):
                 stop.wait(2)
 
     imports = threading.Thread(target=import_loop, daemon=True, name='public-import')
+    def ai_loop():
+        from .ai_review import deliver_one as deliver_ai_review
+        while not stop.wait(1.5):
+            try:
+                deliver_ai_review(factory, config)
+            except Exception as exc:
+                log.error('AI review worker error type=%s', type(exc).__name__)
+                stop.wait(2)
+
+    ai = threading.Thread(target=ai_loop, daemon=True, name='resume-ai-review')
+    def ai_cleanup_loop():
+        from .ai_review import purge_expired
+        while not stop.wait(60):
+            try:
+                purge_expired(factory)
+            except Exception as exc:
+                log.error('AI retention cleanup error type=%s', type(exc).__name__)
+
+    ai_cleanup = threading.Thread(target=ai_cleanup_loop, daemon=True, name='resume-ai-retention')
     class Workers:
         def join(self, timeout=None):
             thread.join(timeout=timeout)
             imports.join(timeout=timeout)
+            ai.join(timeout=timeout)
+            ai_cleanup.join(timeout=timeout)
     imports.start()
     thread.start()
+    ai.start()
+    ai_cleanup.start()
     return stop, Workers()

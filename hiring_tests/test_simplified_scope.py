@@ -47,9 +47,10 @@ def test_three_states_without_scores_or_transitive_inference():
     reqs = [{'id': s, 'skill': s, 'label': s, 'type': 'must'} for s in ('python', 'sql', 'docker')]
     resume = 'Создал сервис на питоне. Использовал postres. Docker не использовал.'
     report = evidence(resume, {}, reqs)
-    assert [r['state'] for r in report['requirements']] == ['mentioned', 'unknown', 'review']
-    assert set(report) == {'requirements', 'total', 'mentioned', 'review', 'unknown'}
+    assert [r['state'] for r in report['requirements']] == ['mentioned', 'indirect', 'review']
+    assert set(report) == {'requirements', 'total', 'mentioned', 'review', 'indirect', 'unknown'}
     assert [q['id'] for q in questions(resume, reqs)] == ['sql', 'docker']
     for row in report['requirements']:
         assert all(quote in resume for quote in row['snippets'])
-        assert set(row) == {'id', 'skill', 'label', 'type', 'state', 'snippets', 'answer'}
+        assert set(row) == {'id', 'skill', 'label', 'type', 'state', 'indirect_sources', 'snippets', 'answer'}
+    assert report['requirements'][1]['indirect_sources'] == ['postgresql']

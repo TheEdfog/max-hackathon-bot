@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.7.0"
+    "version": "1.7.1"
   },
   "paths": {
     "/health": {
@@ -2225,7 +2225,7 @@
               "type": "string"
             },
             "type": "object",
-            "maxProperties": 9,
+            "maxProperties": 10,
             "title": "Answers"
           }
         },
@@ -2289,6 +2289,11 @@
             "type": "object",
             "title": "Assessment"
           },
+          "ai_review": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ai Review"
+          },
           "timeline": {
             "items": {
               "additionalProperties": true,
@@ -2326,6 +2331,7 @@
           "questions",
           "invitation",
           "assessment",
+          "ai_review",
           "timeline",
           "created_at",
           "consent_at",
