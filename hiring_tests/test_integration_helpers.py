@@ -3,7 +3,7 @@ import sqlite3
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 from examples.hr_sync import sync_page, validate_page
 from hiring.db import IntegrationEvent, Job, User, connect
@@ -76,6 +76,7 @@ def test_existing_jobs_get_empty_screening_without_losing_data(tmp_path):
     engine.dispose()
     with sqlite3.connect(path) as db:
         db.execute('ALTER TABLE hiring_jobs DROP COLUMN screening_questions')
+        db.execute('ALTER TABLE hiring_import_tasks DROP COLUMN source_size')
         db.execute('DROP TABLE hiring_integration_events')
     engine, factory = connect('sqlite:///' + str(path))
     with factory() as db:
@@ -83,4 +84,5 @@ def test_existing_jobs_get_empty_screening_without_losing_data(tmp_path):
         assert row.title == 'Legacy job' and row.description == 'Preserve this description'
         assert row.screening_questions == []
         assert list(db.scalars(select(IntegrationEvent))) == []
+    assert 'source_size' in {column['name'] for column in inspect(engine).get_columns('hiring_import_tasks')}
     engine.dispose()

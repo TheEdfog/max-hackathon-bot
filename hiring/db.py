@@ -143,6 +143,7 @@ class ImportTask(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
     job_id: Mapped[str] = mapped_column(ForeignKey('hiring_jobs.id'))
     url: Mapped[str] = mapped_column(Text)
+    source_size: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default='pending')
     text: Mapped[str] = mapped_column(Text, default='')
     pdf: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
@@ -280,6 +281,7 @@ def connect(url):
     # Additive v1 -> v2 migration. Startup is single-process; existing data is kept.
     columns = {c['name'] for c in inspect(engine).get_columns('hiring_outbox')}
     ai_columns = {c['name'] for c in inspect(engine).get_columns('hiring_ai_reviews')}
+    import_columns = {c['name'] for c in inspect(engine).get_columns('hiring_import_tasks')}
     with engine.begin() as connection:
         application_columns = {c['name'] for c in inspect(engine).get_columns('hiring_applications')}
         missing_normalization = 'normalized_skills' not in application_columns
@@ -310,6 +312,8 @@ def connect(url):
         for name, size in (('application_id', 32), ('callback_id', 256), ('import_id', 32)):
             if name not in columns:
                 connection.execute(text(f'ALTER TABLE hiring_outbox ADD COLUMN {name} VARCHAR({size})'))
+        if 'source_size' not in import_columns:
+            connection.execute(text('ALTER TABLE hiring_import_tasks ADD COLUMN source_size INTEGER NOT NULL DEFAULT 0'))
         if 'screening_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN screening_questions JSON NOT NULL DEFAULT '[]'"))
         if 'test_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
