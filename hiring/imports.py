@@ -102,7 +102,7 @@ def deliver_import(factory, fetch=import_source):
     return True
 
 
-def handle_import(db, user, session, text, reply, ask_question):
+def handle_import(db, user, session, text, reply, ask_question, after_submit=None):
     command, _, rest = text.partition(' ')
     editing = session.state.get('step') == 'import_editing' and not text.startswith('/')
     if not editing and command not in ('/import-preview', '/import-confirm', '/import-edit', '/import-add'):
@@ -163,7 +163,9 @@ def handle_import(db, user, session, text, reply, ask_question):
         if task.pdf and not existing:
             save_pdf(db, row, task.pdf, task.provider)
         wipe(db, task, 'used')
-        if row.status == 'clarifying':
+        if after_submit:
+            after_submit(row)
+        elif row.status == 'clarifying':
             ask_question(row, 'Отклик сохранён.\n\n')
         else:
             session.state = {}

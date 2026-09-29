@@ -4,6 +4,7 @@ WORKDIR /app
 COPY requirements-hiring.lock ./
 RUN pip install --no-cache-dir -r requirements-hiring.lock && useradd --uid 10001 --create-home bot
 COPY hiring ./hiring
+COPY config/ai-providers.example.json ./config/ai-providers.example.json
 COPY scripts/smoke_hiring.py ./scripts/smoke_hiring.py
 RUN mkdir -p /app/data && chown -R bot:bot /app/data
 USER bot

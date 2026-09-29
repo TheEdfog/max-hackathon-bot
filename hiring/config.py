@@ -17,6 +17,8 @@ class Config:
     max_api_url: str = field(default_factory=lambda: os.getenv("MAX_API_URL", "https://platform-api2.max.ru"))
     public_url: str = field(default_factory=lambda: os.getenv("PUBLIC_URL", "http://localhost:8000").rstrip("/"))
     worker: bool = field(default_factory=lambda: os.getenv('HIRING_WORKER', 'true').lower() == 'true')
+    ai_enabled: bool = field(default_factory=lambda: os.getenv('HIRING_AI_ENABLED', os.getenv('HIRING_GIGACHAT_ENABLED', 'false')).lower() == 'true')
+    ai_config_json: str = field(default_factory=lambda: os.getenv('HIRING_AI_CONFIG_JSON', 'config/ai-providers.example.json'))
     # CLI-only opt-in; never enabled by the ordinary production environment file.
     sandbox: bool = False
     sandbox_users: tuple[str, ...] = ()
@@ -31,6 +33,8 @@ class Config:
                 raise ValueError('Sandbox requires an explicit MAX user allowlist')
         if self.bot_token and self.max_api_url != 'https://platform-api2.max.ru':
             raise ValueError('Refusing to send a MAX token to an unapproved API origin')
+        if self.ai_enabled and self.sandbox:
+            raise ValueError('AI review is disabled in sandbox mode; use synthetic provider tests instead')
         if self.production:
             if not self.database_url.startswith('sqlite:'):
                 raise ValueError('This release supports serialized SQLite deployment only')

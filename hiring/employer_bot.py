@@ -4,7 +4,7 @@ from datetime import timezone, timedelta
 from fastapi import HTTPException
 from sqlalchemy import func, select
 from .skills import normalize_skill
-from .db import Application, BotAttempt, Job, User, now
+from .db import AIReview, Application, BotAttempt, Job, User, now
 from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract
 from .services import invite, owned_job
@@ -67,7 +67,7 @@ def handle_employer(db, user, session, text, config, reply):
     from .assessment_bot import handle_tests
     if handle_tests(db, user, session, text, reply):
         return True
-    if command in ('/jobs', '/job', '/candidates', '/view', '/resume', '/evidence', '/metrics') and state.get('step') == 'invite_message':
+    if command in ('/jobs', '/job', '/candidates', '/view', '/resume', '/evidence', '/ai-review', '/metrics') and state.get('step') == 'invite_message':
         session.state = {}
     if command in ('/screening', '/screening-on', '/screening-off'):
         if state.get('step') != 'job_review':
@@ -145,7 +145,7 @@ def handle_employer(db, user, session, text, config, reply):
                 reply(f'{job.title}\nОтклики · страница {page + 1}.\n' + ('Выберите кандидата. Порядок - по времени отклика, не рейтинг.' if rows else 'На этой странице откликов нет.'), buttons)
         except HTTPException:
             reply("Вакансия не найдена. Список: /jobs")
-    elif command in ("/view", "/invite", '/resume', '/evidence'):
+    elif command in ("/view", "/invite", '/resume', '/evidence', '/ai-review'):
         parts = text.split(maxsplit=2)
         row = db.get(Application, parts[1]) if len(parts) >= 2 else None
         try:
@@ -187,9 +187,32 @@ def handle_employer(db, user, session, text, config, reply):
                     related = ', '.join(r['indirect_sources'])
                     note = f'Косвенный источник: {related}\n\n' if related else ''
                     reply(f"{r['label']} · {EVIDENCE[r['state']]}\n\n{note}Цитата:\n{quote}\n\nОтвет:\n{r['answer'] or 'Уточнение не запрашивалось или ещё не получено.'}", buttons, application_id=row.id)
+            elif command == '/ai-review':
+                review = db.get(AIReview, row.id)
+                if not review or review.status == 'declined':
+                    reply('Кандидат продолжил без ИИ-анализа.', [('К карточке', '/view ' + row.id)])
+                elif review.status != 'completed':
+                    status = {'pending': 'в очереди', 'working': 'обрабатывается', 'failed': 'не получилась', 'revoked': 'отозвана', 'expired': 'срок хранения завершён'}.get(review.status, 'недоступна')
+                    reply(f'ИИ-сводка {status}. Автоматической оценки нет; решение по-прежнему за рекрутером.', [('К карточке', '/view ' + row.id)])
+                else:
+                    report = review.result or {}
+                    lines = [f'Черновая ИИ-сводка · {review.provider_name} · {review.model}',
+                             'Проверьте каждое утверждение по цитатам. Это не оценка кандидата.', '',
+                             report.get('summary') or 'Краткое резюме не сформировано.']
+                    for item in report.get('experience', []):
+                        lines.append(f"\n{item.get('period', 'Период не указан')} · {item.get('role', 'Роль не распознана')}\n«{item.get('evidence', '')}»")
+                    for item in report.get('date_questions', []):
+                        lines.append(f"\nУточнение: {item.get('question', '')}\nОснование: «{item.get('evidence', '')}»")
+                    lines.append('\nИИ мог ошибиться; не используйте эту заметку для автоматического отказа.')
+                    reply('\n'.join(lines), [('К карточке', '/view ' + row.id)], application_id=row.id)
             else:
                 summary = '\n'.join(f"• {r['label']}: {EVIDENCE[r['state']]}" for r in evidence(row.resume, row.answers, job.requirements, row.normalized_skills)['requirements'])
                 buttons = [('Цитаты и ответы', '/evidence ' + row.id), ('Полное резюме', '/resume ' + row.id)]
+                ai = db.get(AIReview, row.id)
+                if ai and ai.status not in ('declined', 'revoked'):
+                    buttons.insert(0, ('ИИ-сводка', '/ai-review ' + row.id))
+                    if ai.status in ('pending', 'working'):
+                        summary += '\nИИ-сводка: ' + ('в очереди' if ai.status == 'pending' else 'обрабатывается')
                 if any(q.get('kind') == 'screening' for q in row.questions):
                     buttons.append(('Ожидания кандидата', '/screening-answers ' + row.id))
                 if any(q.get('kind') == 'assessment' for q in row.questions):
