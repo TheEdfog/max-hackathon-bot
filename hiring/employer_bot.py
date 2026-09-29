@@ -3,7 +3,7 @@ import hmac
 from datetime import timezone, timedelta
 from fastapi import HTTPException
 from sqlalchemy import func, select
-from core.utils import normalize_skill
+from .skills import normalize_skill
 from .db import Application, BotAttempt, Job, User, now
 from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract

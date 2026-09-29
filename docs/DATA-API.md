@@ -70,7 +70,7 @@ python -m hiring.verify_accounts --isolated-test-db --output data/verification-a
 ```sh
 python -m pip install -r requirements-hiring-test.lock
 python tools/data_api/validate_data_api.py DATA-API.yaml
-python scripts/check_data_api.py --isolated-test-server --credentials data/verification-accounts.json
+python tools/data_api/check_data_api.py --isolated-test-server --credentials data/verification-accounts.json
 ```
 
 Runner входит заново, не печатает JWT/пароли, проверяет отсутствие MAX-привязок и выполняет YAML-сценарий дважды с cleanup. Он не заменяет официальный структурный валидатор. HTTPS настроен, но полный удалённый прогон ещё не выполнен: сначала нужны отдельные синтетические роли и изолированный стенд. Публичные вымышленные сценарии ручной проверки: `examples/pilot-cases.json`.

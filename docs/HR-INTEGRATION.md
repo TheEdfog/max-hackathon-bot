@@ -56,7 +56,7 @@ python -m hiring.integration_keys --owner-id INTERNAL_EMPLOYER_ID --revoke KEY_I
 - `GET /applications/{id}/resume.pdf` - **оригинал** прикреплённого PDF, не заново сгенерированное резюме. Нужны `applications:read` + `applications:pii`, принадлежность вакансии компании. `404` означает, что кандидат прислал только текст; `410` - отзыв отклика. Ответ скачивается как attachment, с `no-store`, `nosniff` и SHA-256 в `X-Content-SHA256`.
 - Кандидат передаёт файл через `POST /api/jobs/{job_id}/apply-pdf` (JWT кандидата, multipart: `file`, `name`, `consent=true`) либо подтверждает импорт PDF по ссылке в MAX. Повторный отклик не заменяет уже сохранённый файл или имя. Лимиты: 5 МБ, 10 страниц, текстовый слой. OCR, DOCX и вложения MAX не реализованы.
 - `POST /documents/parse` (`jobs:write`, multipart `file`) извлекает текст PDF без сохранения. Парсер изолирован в процессе без ключей приложения.
-- `POST /sources/preview` (`jobs:write`, JSON `url`) возвращает `text`, `provider`, `warning`, `stored=false`. Не передаёт ключ HR в источник. [Поддерживаемые источники и ограничения](PUBLIC-SOURCES.md).
+- `POST /sources/preview` (`jobs:write`, JSON `url`) возвращает `text`, `provider`, `warning`, `stored=false`. Не передаёт ключ HR источнику; принимает только публичную PDF-ссылку Яндекс Диска. Страницы входа, другие облака и сканированные PDF не поддерживаются.
 
 ### Библиотека тестов и копия для вакансии
 

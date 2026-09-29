@@ -51,7 +51,7 @@ class JobBody(BaseModel):
     @field_validator("requirements")
     @classmethod
     def unique_requirements(cls, value):
-        from core.utils import normalize_skill
+        from .skills import normalize_skill
         if len({r.id for r in value}) != len(value) or len({normalize_skill(r.skill) for r in value}) != len(value):
             raise ValueError("Требования не должны повторяться")
         return value

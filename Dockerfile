@@ -3,8 +3,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements-hiring.lock ./
 RUN pip install --no-cache-dir -r requirements-hiring.lock && useradd --uid 10001 --create-home bot
-COPY core/utils.py ./core/utils.py
-COPY apps/web/services/vacancy_parser_service.py ./apps/web/services/vacancy_parser_service.py
 COPY hiring ./hiring
 COPY scripts/smoke_hiring.py ./scripts/smoke_hiring.py
 RUN mkdir -p /app/data && chown -R bot:bot /app/data

@@ -1,7 +1,7 @@
 """Find skill mentions and show their source. No scores or inferred competence."""
 import re
-from apps.web.services.vacancy_parser_service import extract_requirements_locally, KNOWN_SKILL_ALIASES
-from core.utils import normalize_skill, SKILL_ALIASES
+from .requirements_parser import extract_requirements_locally, KNOWN_SKILL_ALIASES
+from .skills import normalize_skill, SKILL_ALIASES
 
 ALIASES = {}
 for alias, canonical in SKILL_ALIASES.items():
