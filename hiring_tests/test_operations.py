@@ -13,7 +13,7 @@ from hiring.maintenance import backup
 from hiring.outbox import deliver_one
 from hiring.verify_accounts import provision
 from test_product import client, register
-from scripts.check_data_api import run
+from tools.data_api.check_data_api import run
 import yaml
 
 

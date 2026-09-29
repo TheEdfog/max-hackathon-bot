@@ -1,8 +1,5 @@
 """Offline tests: no provider, MAX, hh.ru or HR network requests."""
-import io
-import json
 import sqlite3
-from urllib import error
 
 import httpx
 import pytest
@@ -10,7 +7,6 @@ from sqlalchemy import select
 
 from examples.hr_sync import sync_page, validate_page
 from hiring.db import IntegrationEvent, Job, User, connect
-from scripts import free_dev_draft
 from test_product import client, register, job
 from test_integrations import PREFIX, key
 
@@ -88,50 +84,3 @@ def test_existing_jobs_get_empty_screening_without_losing_data(tmp_path):
         assert row.screening_questions == []
         assert list(db.scalars(select(IntegrationEvent))) == []
     engine.dispose()
-
-
-@pytest.mark.parametrize('value', ['', 'x' * 4001, 'contact: synthetic@example.invalid',
-                                  'api_key=synthetic', 'Bearer synthetic', 'x' * 48])
-def test_free_helper_refuses_obvious_sensitive_or_unbounded_input(value):
-    with pytest.raises(ValueError):
-        free_dev_draft.validate(value)
-
-
-def test_free_helper_bounded_request_and_untrusted_result(monkeypatch):
-    class Reply(io.BytesIO):
-        pass
-    captured = []
-    class Opener:
-        def open(self, request, timeout):
-            captured.append((request, timeout))
-            return Reply(json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': 'Draft only'}}],
-                                     'usage': {'total_tokens': 12, 'private_field': 'do not echo'}}).encode())
-    monkeypatch.setattr(free_dev_draft.request, 'build_opener', lambda *args: Opener())
-    result = free_dev_draft.draft('Synthetic task: validate an increasing integer cursor.', 'kilo')
-    req, timeout = captured[0]
-    assert timeout == 25 and 'Authorization' not in req.headers
-    assert json.loads(req.data)['max_tokens'] == 800
-    assert result['untrusted_draft'] == 'Draft only' and result['provider_usage'] == {'total_tokens': 12}
-    with pytest.raises(ValueError):
-        free_dev_draft.draft('Synthetic task', 'paid-provider')
-    with pytest.raises(ValueError):
-        free_dev_draft.draft('Synthetic task', 'ovh', budget=801)
-
-
-def test_free_helper_explicit_one_fallback(monkeypatch, capsys):
-    class Input(io.StringIO):
-        def reconfigure(self, **kwargs):
-            pass
-    class Output(io.StringIO):
-        def reconfigure(self, **kwargs):
-            pass
-    attempted = []
-    def fail(text, provider):
-        attempted.append(provider)
-        raise error.URLError('Synthetic outage')
-    monkeypatch.setattr(free_dev_draft.sys, 'stdin', Input('Synthetic cursor helper'))
-    monkeypatch.setattr(free_dev_draft.sys, 'stdout', Output())
-    monkeypatch.setattr(free_dev_draft.sys, 'argv', ['helper', '--data-class', 'synthetic', '--send', '--fallback'])
-    monkeypatch.setattr(free_dev_draft, 'draft', fail)
-    assert free_dev_draft.main() == 2
-    assert attempted == ['ovh', 'kilo']

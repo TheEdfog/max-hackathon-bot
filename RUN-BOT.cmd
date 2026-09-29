@@ -6,7 +6,7 @@ if not exist ".env.hiring" (
   exit /b 1
 )
 if not exist ".venv\Scripts\python.exe" (
-  echo Install Python 3.13, create .venv and install requirements-hiring.lock. See docs/MAX-BOT.md.
+  echo Install Python 3.13, create .venv and install requirements-hiring.lock. See README.md.
   pause
   exit /b 1
 )

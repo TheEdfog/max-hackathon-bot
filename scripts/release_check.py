@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 from urllib.parse import urlsplit
+from dotenv import dotenv_values
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +22,7 @@ REQUIRED = ('README.md', 'Dockerfile', 'docker-compose.yml',
             'compose.production.yml', 'deploy/Caddyfile', 'requirements-hiring.lock',
             'requirements-hiring-test.lock', 'DATA-API.yaml', 'openapi.json',
             'docs/DEPLOYMENT.md', 'docs/HR-INTEGRATION.md', 'docs/DATA-POLICY.md')
-ENV_TEMPLATES = {'.env.example', '.env.hiring.example', '.env.production.example', 'legacy/.env.example'}
+ENV_TEMPLATES = {'.env.hiring.example'}
 
 
 def safe_release_name(name):
@@ -75,9 +76,28 @@ def inspect_files(root, tracked):
     return checks, hashes
 
 
+def inspect_known_secrets(root, history=False):
+    """Compare local .env.hiring values without printing secret contents."""
+    values = dotenv_values(root / '.env.hiring')
+    secrets = [value.encode() for key, value in values.items() if value and len(value) >= 8
+               and any(part in key.upper() for part in ('TOKEN', 'SECRET', 'PASSWORD', 'EMPLOYER_CODE', 'API_KEY'))]
+    names = subprocess.run(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+                           cwd=root, check=True, capture_output=True).stdout.decode().split('\0')
+    findings = [name for name in set(names) - {''} if (root / name).is_file()
+                and any(secret in (root / name).read_bytes() for secret in secrets)]
+    history_hit = False
+    if history and secrets:
+        output = subprocess.run(['git', 'log', '--all', '-p', '--no-ext-diff'], cwd=root,
+                                check=True, capture_output=True).stdout
+        history_hit = any(secret in output for secret in secrets)
+    return len(secrets), sorted(findings), history_hit
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--submission', action='store_true')
+    parser.add_argument('--secrets', action='store_true', help='Compare .env.hiring values with publishable files')
+    parser.add_argument('--history', action='store_true', help='Also inspect reachable Git text history')
     args = parser.parse_args()
     def run(command):
         return subprocess.run(command, cwd=ROOT, capture_output=True, encoding='utf-8', timeout=30,
@@ -89,6 +109,15 @@ def main():
         if any(r.returncode for r in (commit, files, status)):
             raise ValueError('Git unavailable')
         checks, hashes = inspect_files(ROOT, set(files.stdout.rstrip('\0').split('\0')))
+        if args.secrets or args.history:
+            count, findings, history_hit = inspect_known_secrets(ROOT, args.history)
+            checks.append({'check': 'known_local_secrets', 'ok': not findings and not history_hit,
+                           'note': (f'{count} known values checked; {len(findings)} publishable file(s) matched'
+                                    + ('; Git history matched' if history_hit else ''))})
+            if findings:
+                print('Known local secret values occur in publishable files: ' + ', '.join(findings))
+            if history_hit:
+                print('A known local secret value occurs in reachable Git history; investigate privately.')
         for name, command in (
             ('data_api_schema', [sys.executable, 'tools/data_api/validate_data_api.py', 'DATA-API.yaml']),
             ('openapi_matches_code', [sys.executable, 'scripts/export_hiring_openapi.py', '--check']),

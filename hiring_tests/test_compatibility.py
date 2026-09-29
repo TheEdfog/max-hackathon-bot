@@ -21,8 +21,8 @@ def test_broad_dictionary_used_for_resume_evidence(phrase, skill):
 
 
 def test_entire_parser_vocabulary_available_not_only_python():
-    from apps.web.services.vacancy_parser_service import KNOWN_SKILL_ALIASES
-    from core.utils import normalize_skill
+    from hiring.requirements_parser import KNOWN_SKILL_ALIASES
+    from hiring.skills import normalize_skill
     for skill, aliases in KNOWN_SKILL_ALIASES.items():
         assert set(aliases) <= set(ALIASES[normalize_skill(skill)])
     assert len(ALIASES) > 150

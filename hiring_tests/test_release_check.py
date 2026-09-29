@@ -8,7 +8,7 @@ def test_release_rejects_private_paths(name):
     assert not safe_release_name(name)
 
 
-@pytest.mark.parametrize('name', ['README.md', 'hiring/bot.py', '.env.hiring.example', 'storage/attachments/.gitkeep', 'legacy/.env.example'])
+@pytest.mark.parametrize('name', ['README.md', 'hiring/bot.py', '.env.hiring.example', 'storage/attachments/.gitkeep'])
 def test_release_allows_source_and_templates(name):
     assert safe_release_name(name)
 

@@ -31,14 +31,11 @@ storage/*.log
 !storage/generated/.gitkeep
 !storage/temp/.gitkeep
 !storage/vacancy_raw/.gitkeep
-!apps/api/db/migrations/versions/.gitkeep
 
 docs/*.docx
 docs/assets_test.png
 docs/test_reports/
 .env.*
-!.env.example
-!.env.production.example
 !.env.hiring.example
 *.pem
 *.key

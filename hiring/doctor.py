@@ -19,7 +19,7 @@ def inspect_local(config):
         config.validate()
         add('configuration', True, 'Configuration accepted; values are not displayed')
     except ValueError:
-        add('configuration', False, 'Invalid configuration; compare with .env.example')
+        add('configuration', False, 'Invalid configuration; compare with .env.hiring.example')
     add('python', sys.version_info[:2] == (3, 13), 'Release tested on Python 3.13')
     add('max_token', bool(config.bot_token), 'Set MAX_BOT_TOKEN in the private environment file')
     add('employer_code', bool(config.employer_code), 'Required for employer onboarding')

@@ -1,12 +1,7 @@
-"""
-Парсинг текста вакансии по URL через requests + BeautifulSoup4.
-"""
+"""Local vacancy requirement extraction and its canonical skill vocabulary."""
 from __future__ import annotations
-
 import re
-
-from core.utils import normalize_skill, SKILL_ALIASES
-
+from .skills import normalize_skill
 
 REQUIREMENT_CATEGORIES: dict[str, tuple[str, str]] = {
     "python": ("technology", "Python"),
@@ -162,7 +157,6 @@ REQUIREMENT_CATEGORIES: dict[str, tuple[str, str]] = {
     "consulting experience": ("domain_experience", "Опыт в консалтинге"),
     "crm": ("tool", "CRM"),
 }
-
 
 KNOWN_SKILL_ALIASES: dict[str, list[str]] = {
     "python": ["python", "python 3", "python3", "питон"],
@@ -360,6 +354,7 @@ MUST_MARKERS = (
     "мы ожидаем, что вы",
     "ожидаем, что вы",
 )
+
 NICE_MARKERS = (
     "желательно",
     "будет плюсом",
@@ -382,13 +377,6 @@ NICE_MARKERS = (
     "приветствуется",
 )
 
-# One canonical vocabulary for vacancy extraction, manual requirements and
-# candidate evidence. Keep the original section/negation rules for every alias.
-for _alias, _canonical in SKILL_ALIASES.items():
-    KNOWN_SKILL_ALIASES.setdefault(_canonical, [_canonical])
-    if _alias not in KNOWN_SKILL_ALIASES[_canonical]:
-        KNOWN_SKILL_ALIASES[_canonical].append(_alias)
-
 MUST_SECTION_MARKERS = (
     "требования:",
     "обязательные требования:",
@@ -397,293 +385,11 @@ MUST_SECTION_MARKERS = (
     "мы ожидаем, что вы:",
     "ожидаем, что вы:",
 )
+
 NICE_SECTION_MARKERS = NICE_MARKERS
-
-ENGINEERING_ROLE_MARKERS = (
-    "backend",
-    "back-end",
-    "бэкенд",
-    "бекенд",
-    "frontend",
-    "front-end",
-    "фронтенд",
-    "fullstack",
-    "full-stack",
-    "devops",
-    "sre",
-    "site reliability",
-    "qa",
-    "tester",
-    "тестировщик",
-    "разработчик",
-    "developer",
-    "software engineer",
-    "инженер",
-    "программист",
-    "mobile developer",
-    "android developer",
-    "ios developer",
-    "data engineer",
-    "ml engineer",
-    "machine learning engineer",
-)
-PEOPLE_ORIENTED_ROLE_MARKERS = (
-    "project manager",
-    "project-manager",
-    "проектный менеджер",
-    "менеджер проектов",
-    "руководитель проекта",
-    "проджект",
-    "product manager",
-    "product owner",
-    "продуктовый менеджер",
-    "продакт",
-    "scrum master",
-    "delivery manager",
-    "account manager",
-    "customer success",
-    "business analyst",
-    "бизнес-аналитик",
-    "system analyst",
-    "системный аналитик",
-    "аналитик требований",
-    "team lead",
-    "тимлид",
-    "tech lead",
-    "техлид",
-    "руководитель команды",
-)
-HYBRID_ROLE_MARKERS = (
-    "business analyst",
-    "бизнес-аналитик",
-    "system analyst",
-    "системный аналитик",
-    "аналитик требований",
-    "team lead",
-    "тимлид",
-    "tech lead",
-    "техлид",
-)
-ENGINEERING_CONTEXT_MARKERS = (
-    "api",
-    "backend",
-    "frontend",
-    "код",
-    "разработка",
-    "интеграции",
-    "база данных",
-    "sql",
-    "архитектура",
-    "микросервис",
-    "инфраструктура",
-    "docker",
-    "kubernetes",
-    "ci/cd",
-    "тестирование",
-    "автотест",
-    "devops",
-)
-PEOPLE_CONTEXT_MARKERS = (
-    "стейкхолдер",
-    "заказчик",
-    "клиент",
-    "сбор требований",
-    "анализ требований",
-    "интервью",
-    "презентации",
-    "презентация",
-    "переговоры",
-    "фасилитация",
-    "коммуникация",
-    "коммуникации",
-    "roadmap",
-    "backlog",
-    "user story",
-    "custdev",
-    "customer development",
-    "приоритизация",
-    "приоритизации",
-    "бизнес-процесс",
-)
-TITLE_LINE_PREFIXES = (
-    "вакансия",
-    "название",
-    "позиция",
-    "должность",
-    "роль",
-)
-ROLE_SENSITIVE_CATEGORIES = {"soft_skill", "sales_skill"}
-
-
-def _contains_alias(text: str, alias: str) -> bool:
-    alias = alias.strip().lower()
-    if not alias:
-        return False
-    pattern = rf"(?<![a-zа-я0-9]){re.escape(alias)}(?![a-zа-я0-9])"
-    return re.search(pattern, text, flags=re.IGNORECASE) is not None
-
-
-def _marker_count(text: str, markers: tuple[str, ...]) -> int:
-    return sum(1 for marker in markers if _contains_alias(text, marker))
-
-
-def _vacancy_title_context(raw_text: str) -> str:
-    first_lines: list[str] = []
-    title_lines: list[str] = []
-    for line in raw_text.splitlines():
-        clean_line = line.strip()
-        if not clean_line:
-            continue
-
-        if len(first_lines) < 6:
-            first_lines.append(clean_line)
-
-        lowered = clean_line.lower()
-        if any(lowered.startswith(prefix) for prefix in TITLE_LINE_PREFIXES):
-            title_lines.append(clean_line)
-
-        if len(first_lines) >= 6 and title_lines:
-            break
-
-    return "\n".join(title_lines or first_lines).lower()
-
-
-def _vacancy_role_family(raw_text: str) -> str:
-    title_context = _vacancy_title_context(raw_text)
-    people_title_score = _marker_count(title_context, PEOPLE_ORIENTED_ROLE_MARKERS)
-    engineering_title_score = _marker_count(title_context, ENGINEERING_ROLE_MARKERS)
-    hybrid_title_score = _marker_count(title_context, HYBRID_ROLE_MARKERS)
-
-    early_context = raw_text[:2400].lower()
-    people_context_score = (
-        _marker_count(early_context, PEOPLE_ORIENTED_ROLE_MARKERS)
-        + _marker_count(early_context, PEOPLE_CONTEXT_MARKERS)
-    )
-    engineering_context_score = (
-        _marker_count(early_context, ENGINEERING_ROLE_MARKERS)
-        + _marker_count(early_context, ENGINEERING_CONTEXT_MARKERS)
-    )
-
-    if engineering_title_score > people_title_score:
-        return "engineering"
-
-    if people_title_score > engineering_title_score:
-        if hybrid_title_score and engineering_context_score and people_context_score:
-            return "mixed"
-        return "people"
-
-    if people_title_score and engineering_title_score:
-        return "mixed"
-
-    if people_context_score and engineering_context_score:
-        if abs(people_context_score - engineering_context_score) <= 1:
-            return "mixed"
-        return "people" if people_context_score > engineering_context_score else "engineering"
-
-    if people_context_score:
-        return "people"
-    if engineering_context_score:
-        return "engineering"
-    return "unknown"
-
-
-def apply_soft_skill_role_policy(raw_text: str, requirements: list[dict]) -> list[dict]:
-    role_family = _vacancy_role_family(raw_text)
-    normalized_requirements: list[dict] = []
-    for item in requirements:
-        normalized_item = _normalize_requirement_item(item)
-        if normalized_item is None:
-            continue
-
-        if normalized_item["category"] in ROLE_SENSITIVE_CATEGORIES:
-            if role_family == "engineering":
-                normalized_item["type"] = "nice"
-            elif role_family == "people" and normalized_item["type"] != "nice":
-                normalized_item["type"] = "must"
-        normalized_requirements.append(normalized_item)
-
-    return deduplicate_requirements(normalized_requirements)
-
-
-def deduplicate_requirements(requirements: list[dict]) -> list[dict]:
-    result_by_skill: dict[str, dict] = {}
-    order: list[str] = []
-
-    for item in requirements:
-        normalized_item = _normalize_requirement_item(item)
-        if normalized_item is None:
-            continue
-
-        skill_norm = normalized_item["skill_norm"]
-        if skill_norm not in result_by_skill:
-            result_by_skill[skill_norm] = normalized_item
-            order.append(skill_norm)
-            continue
-
-        if _requirement_rank(normalized_item) > _requirement_rank(result_by_skill[skill_norm]):
-            result_by_skill[skill_norm] = normalized_item
-
-    return [result_by_skill[skill_norm] for skill_norm in order]
-
-
-def _normalize_requirement_item(item: dict) -> dict | None:
-    original_skill_norm = str(item.get("skill_norm", "")).strip().lower()
-    skill_norm = normalize_skill(original_skill_norm)
-    if not skill_norm:
-        return None
-
-    inferred_category = _category_for_skill(skill_norm)
-    category = item.get("category") or inferred_category
-    if category == "other" and inferred_category != "other":
-        category = inferred_category
-
-    display_name = item.get("display_name")
-    if inferred_category != "other" and (
-        not display_name
-        or str(display_name).strip().lower() in {skill_norm, original_skill_norm}
-    ):
-        display_name = _display_name_for_skill(skill_norm)
-
-    raw_type = item.get("type", "must")
-    if hasattr(raw_type, "value"):
-        raw_type = raw_type.value
-    requirement_type = "nice" if str(raw_type).strip().lower() == "nice" else "must"
-
-    confidence = item.get("confidence", 0.8)
-    try:
-        confidence = max(0.0, min(float(confidence), 1.0))
-    except (TypeError, ValueError):
-        confidence = 0.8
-
-    return {
-        "skill_norm": skill_norm,
-        "display_name": display_name or _display_name_for_skill(skill_norm),
-        "category": category,
-        "type": requirement_type,
-        "source_text": item.get("source_text"),
-        "confidence": confidence,
-    }
-
-
-def _requirement_rank(item: dict) -> tuple[int, int, float, int]:
-    source_text = str(item.get("source_text") or "").strip().lower()
-    is_generic_key_skill_source = source_text.startswith("ключевые навыки:")
-    category = item.get("category") or "other"
-    return (
-        0 if is_generic_key_skill_source else 1,
-        1 if category != "other" else 0,
-        float(item.get("confidence") or 0.0),
-        1 if source_text else 0,
-    )
-
-
-def _category_for_skill(skill_norm: str) -> str:
-    return REQUIREMENT_CATEGORIES.get(skill_norm, ("other", skill_norm))[0]
-
 
 def _display_name_for_skill(skill_norm: str) -> str:
     return REQUIREMENT_CATEGORIES.get(skill_norm, ("other", skill_norm))[1]
-
 
 def _compact_source_text(value: str, *, max_length: int = 180) -> str:
     compacted = re.sub(r"\s+", " ", value).strip()
@@ -691,13 +397,11 @@ def _compact_source_text(value: str, *, max_length: int = 180) -> str:
         return compacted
     return compacted[: max_length - 1].rstrip(" .,;:") + "…"
 
-
 def _source_excerpt(text: str, position: int, *, radius: int = 90) -> str:
     start = max(0, _context_start_before(text, position))
     end_candidates = [idx for idx in (text.find("\n", position), text.find(";", position)) if idx != -1]
     end = min(end_candidates) if end_candidates else min(len(text), position + radius)
     return _compact_source_text(text[start:end])
-
 
 def _is_negated_mention(text: str, position: int, end: int) -> bool:
     prefix = re.split(r'[\n;.!?,]', text[max(0, position - 48):position].lower())[-1]
@@ -705,7 +409,6 @@ def _is_negated_mention(text: str, position: int, end: int) -> bool:
     if re.match(r'\s*(?:не\s+(?:требуется|нужен|нужна|нужны)|(?:is\s+)?not\s+required)\b', suffix):
         return True
     return bool(re.search(r'(?:\bбез\b|\bwithout\b|\bno\b|\bnot\b(?!\s+only)|не\s+(?:нужен|нужна|нужны|требуется))', prefix))
-
 
 def _nearest_marker_type(text: str, position: int) -> str | None:
     prefix = text[:position].lower()
@@ -721,7 +424,6 @@ def _nearest_marker_type(text: str, position: int) -> str | None:
     if nearest == last_must:
         return "must"
     return "neutral"
-
 
 def _guess_requirement_type(text: str, position: int) -> str | None:
     # A modifier can follow its skill: "Docker будет плюсом". An explicit
@@ -759,15 +461,12 @@ def _guess_requirement_type(text: str, position: int) -> str | None:
         return None
     return "must"
 
-
 def _last_marker_index(text: str, markers: tuple[str, ...]) -> int:
     return max((text.rfind(marker) for marker in markers), default=-1)
-
 
 def _context_start_before(text: str, position: int) -> int:
     boundaries = ("\n", "\r", ";", "•")
     return max(text.rfind(boundary, 0, position) for boundary in boundaries) + 1
-
 
 def _find_skill_positions(text: str, skill_norm: str) -> list[int]:
     aliases = KNOWN_SKILL_ALIASES.get(skill_norm, [skill_norm])
@@ -780,11 +479,9 @@ def _find_skill_positions(text: str, skill_norm: str) -> list[int]:
         positions.extend(match.start() for match in re.finditer(pattern, text, flags=re.IGNORECASE))
     return sorted(set(positions))
 
-
 def _find_skill_position(text: str, skill_norm: str) -> int | None:
     positions = _find_skill_positions(text, skill_norm)
     return min(positions) if positions else None
-
 
 def _non_negated_positions(text: str, skill_norm: str) -> list[int]:
     positions = set()
@@ -794,7 +491,6 @@ def _non_negated_positions(text: str, skill_norm: str) -> list[int]:
             if not _is_negated_mention(text, match.start(), match.end()):
                 positions.add(match.start())
     return sorted(positions)
-
 
 def _infer_requirement_type_from_text(text: str, skill_norm: str) -> str | None:
     positions = _non_negated_positions(text, skill_norm)
@@ -808,109 +504,12 @@ def _infer_requirement_type_from_text(text: str, skill_norm: str) -> str | None:
         return "nice"
     return None
 
-
-def _normalize_extracted_requirements(raw_text: str, requirements: list[dict]) -> list[dict]:
-    normalized_text = raw_text.lower()
-    result_by_skill: dict[str, dict] = {}
-
-    for item in requirements:
-        skill_norm = normalize_skill(str(item.get("skill_norm", "")))
-        if not skill_norm:
-            continue
-        if _find_skill_positions(normalized_text, skill_norm) and not _non_negated_positions(normalized_text, skill_norm):
-            continue
-
-        raw_type = str(item.get("type", "must")).strip().lower()
-        requirement_type = "nice" if raw_type == "nice" else "must"
-        inferred_type = _infer_requirement_type_from_text(normalized_text, skill_norm)
-        if inferred_type:
-            requirement_type = inferred_type
-
-        source_text = str(item.get("source_text") or "").strip()
-        positions = _non_negated_positions(normalized_text, skill_norm)
-        if not source_text and positions:
-            source_text = _source_excerpt(raw_text, positions[0])
-
-        confidence = item.get("confidence", 0.8)
-        try:
-            confidence = max(0.0, min(float(confidence), 1.0))
-        except (TypeError, ValueError):
-            confidence = 0.8
-
-        normalized_item = {
-            "skill_norm": skill_norm,
-            "display_name": item.get("display_name") or _display_name_for_skill(skill_norm),
-            "category": item.get("category") or _category_for_skill(skill_norm),
-            "type": requirement_type,
-            "source_text": source_text or None,
-            "confidence": confidence,
-        }
-
-        # If the same competency appears twice, keep must as the stronger requirement.
-        if result_by_skill.get(skill_norm, {}).get("type") == "must":
-            continue
-        if requirement_type == "must" or skill_norm not in result_by_skill:
-            result_by_skill[skill_norm] = normalized_item
-
-    return list(result_by_skill.values())
-
-
-def _extract_hh_key_skill_requirements(raw_text: str) -> list[dict[str, str]]:
-    result: list[dict[str, str]] = []
-    for line in raw_text.splitlines():
-        if not line.lower().startswith("ключевые навыки:"):
-            continue
-
-        _, _, skills_text = line.partition(":")
-        for raw_skill in skills_text.split(","):
-            skill_norm = normalize_skill(raw_skill)
-            if skill_norm:
-                result.append(
-                    {
-                        "skill_norm": skill_norm,
-                        "display_name": _display_name_for_skill(skill_norm),
-                        "category": _category_for_skill(skill_norm),
-                        "type": "must",
-                        "source_text": line.strip(),
-                        "confidence": 0.7,
-                    }
-                )
-        break
-    return result
-
-
-def _merge_requirements(
-    primary: list[dict],
-    secondary: list[dict],
-) -> list[dict]:
-    result: list[dict] = []
-
-    for source in (primary, secondary):
-        for item in source:
-            skill_norm = normalize_skill(str(item.get("skill_norm", "")))
-            if not skill_norm:
-                continue
-            requirement_type = "nice" if item.get("type") == "nice" else "must"
-            result.append(
-                {
-                    "skill_norm": skill_norm,
-                    "display_name": item.get("display_name") or _display_name_for_skill(skill_norm),
-                    "category": item.get("category") or _category_for_skill(skill_norm),
-                    "type": requirement_type,
-                    "source_text": item.get("source_text"),
-                    "confidence": item.get("confidence", 0.8),
-                }
-            )
-
-    return deduplicate_requirements(result)
-
-
 def extract_requirements_locally(raw_text: str) -> list[dict]:
     normalized_text = raw_text.lower()
     result: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
-    for skill, aliases in KNOWN_SKILL_ALIASES.items():
+    for skill in KNOWN_SKILL_ALIASES:
         positions = _non_negated_positions(normalized_text, skill)
         if not positions:
             continue
@@ -929,39 +528,10 @@ def extract_requirements_locally(raw_text: str) -> list[dict]:
             {
                 "skill_norm": skill_norm,
                 "display_name": _display_name_for_skill(skill_norm),
-                "category": _category_for_skill(skill_norm),
                 "type": requirement_type,
                 "source_text": _source_excerpt(raw_text, positions[0]),
-                "confidence": 0.85,
             }
         )
         seen.add(key)
 
     return result
-
-
-def _build_role_context(raw_text: str, vacancy_title: str | None = None) -> str:
-    title = (vacancy_title or "").strip()
-    if not title:
-        return raw_text
-    return f"Вакансия: {title}\n{raw_text}"
-
-
-def extract_vacancy_requirements(raw_text: str, *, vacancy_title: str | None = None) -> list[dict]:
-    # Legacy web-only integration. The MAX bot imports only the local parser above.
-    from apps.web.services.llm_service import LlmServiceError, extract_requirements_with_llm
-    from core.config import settings
-    role_context = _build_role_context(raw_text, vacancy_title)
-    hh_key_skills = _extract_hh_key_skill_requirements(raw_text)
-
-    if settings.deepseek_api_key:
-        try:
-            llm_requirements = extract_requirements_with_llm(raw_text)
-            if llm_requirements:
-                normalized = _normalize_extracted_requirements(raw_text, llm_requirements)
-                return apply_soft_skill_role_policy(role_context, _merge_requirements(normalized, hh_key_skills))
-        except LlmServiceError:
-            pass
-
-    local_requirements = _normalize_extracted_requirements(raw_text, extract_requirements_locally(raw_text))
-    return apply_soft_skill_role_policy(role_context, _merge_requirements(local_requirements, hh_key_skills))
