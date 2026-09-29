@@ -257,8 +257,11 @@ def connect(url):
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN screening_questions JSON NOT NULL DEFAULT '[]'"))
         if 'test_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN test_questions JSON NOT NULL DEFAULT '[]'"))
-    Index("ix_hiring_applications_user_resume", Application.user_id, Application.resume_sha256).create(
-        bind=engine, checkfirst=True)
+    application_indexes = {index['name'] for index in inspect(engine).get_indexes('hiring_applications')}
+    if 'ix_hiring_applications_user_resume' not in application_indexes:
+        resume_index = next(index for index in Application.__table__.indexes
+                            if index.name == 'ix_hiring_applications_user_resume')
+        resume_index.create(bind=engine)
     from .integration_events import install_events
     install_events()
     return engine, sessionmaker(engine, expire_on_commit=False)
