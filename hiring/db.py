@@ -4,7 +4,7 @@ from sqlalchemy import (
     JSON, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String,
     Text, UniqueConstraint, create_engine, event, inspect, text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
 def uid():
@@ -240,6 +240,34 @@ class IntegrationEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+def _collect_integration_changes(db, _flush_context, _instances):
+    for row in list(db.new) + list(db.dirty):
+        if not isinstance(row, (Job, Application)):
+            continue
+        fresh = row in db.new
+        if not fresh and not db.is_modified(row, include_collections=True):
+            continue
+        if not row.id:
+            row.id = uid()
+        if isinstance(row, Job):
+            owner, kind = row.owner_id, 'job.created' if fresh else 'job.updated'
+        else:
+            job = db.get(Job, row.job_id)
+            if not job:
+                job = next((item for item in db.new if isinstance(item, Job) and item.id == row.job_id), None)
+            if not job:
+                continue  # The FK constraint rejects an invalid application.
+            owner = job.owner_id
+            kind = 'application.created' if fresh else (
+                'application.withdrawn' if row.status == 'withdrawn' else 'application.updated')
+        db.add(IntegrationEvent(owner_id=owner, kind=kind, resource_id=row.id))
+
+
+def _install_integration_events():
+    if not event.contains(Session, 'before_flush', _collect_integration_changes):
+        event.listen(Session, 'before_flush', _collect_integration_changes)
+
+
 def connect(url):
     kwargs = {"connect_args": {"check_same_thread": False, "timeout": 20}} if url.startswith("sqlite") else {}
     engine = create_engine(url, **kwargs)
@@ -293,8 +321,7 @@ def connect(url):
         resume_index = next(index for index in Application.__table__.indexes
                             if index.name == 'ix_hiring_applications_user_resume')
         resume_index.create(bind=engine)
-    from .integration_events import install_events
-    install_events()
+    _install_integration_events()
     return engine, sessionmaker(engine, expire_on_commit=False)
 
 
