@@ -1,6 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, create_engine, event, inspect, text
+from sqlalchemy import (
+    JSON, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String,
+    Text, UniqueConstraint, create_engine, event, inspect, text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -45,11 +48,16 @@ class Job(Base):
 
 class Application(Base):
     __tablename__ = "hiring_applications"
-    __table_args__ = (UniqueConstraint("job_id", "user_id", name="uq_hiring_application"),)
+    __table_args__ = (
+        UniqueConstraint("job_id", "user_id", name="uq_hiring_application"),
+        Index("ix_hiring_applications_user_resume", "user_id", "resume_sha256"),
+    )
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     job_id: Mapped[str] = mapped_column(ForeignKey("hiring_jobs.id"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("hiring_users.id"), index=True)
     resume: Mapped[str] = mapped_column(Text)
+    resume_sha256: Mapped[str] = mapped_column(String(64), default="")
+    normalized_skills: Mapped[dict] = mapped_column(JSON, default=dict)
     answers: Mapped[dict] = mapped_column(JSON, default=dict)
     questions: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(24), default="clarifying")
@@ -216,6 +224,32 @@ def connect(url):
     # Additive v1 -> v2 migration. Startup is single-process; existing data is kept.
     columns = {c['name'] for c in inspect(engine).get_columns('hiring_outbox')}
     with engine.begin() as connection:
+        application_columns = {c['name'] for c in inspect(engine).get_columns('hiring_applications')}
+        missing_normalization = 'normalized_skills' not in application_columns
+        missing_resume_hash = 'resume_sha256' not in application_columns
+        if missing_normalization:
+            connection.execute(text("ALTER TABLE hiring_applications ADD COLUMN normalized_skills JSON NOT NULL DEFAULT '{}'"))
+        if missing_resume_hash:
+            connection.execute(text("ALTER TABLE hiring_applications ADD COLUMN resume_sha256 VARCHAR(64) NOT NULL DEFAULT ''"))
+        if missing_normalization or missing_resume_hash:
+            from .matching import normalize_resume, resume_digest
+            last_id = ''
+            while True:
+                rows = connection.execute(text(
+                    "SELECT id, resume FROM hiring_applications "
+                    "WHERE resume != '' AND id > :last_id ORDER BY id LIMIT 100"
+                ), {'last_id': last_id}).all()
+                if not rows:
+                    break
+                for application_id, resume in rows:
+                    values = {}
+                    if missing_normalization:
+                        values['normalized_skills'] = normalize_resume(resume)
+                    if missing_resume_hash:
+                        values['resume_sha256'] = resume_digest(resume)
+                    connection.execute(Application.__table__.update()
+                                       .where(Application.id == application_id).values(**values))
+                    last_id = application_id
         for name, size in (('application_id', 32), ('callback_id', 256), ('import_id', 32)):
             if name not in columns:
                 connection.execute(text(f'ALTER TABLE hiring_outbox ADD COLUMN {name} VARCHAR({size})'))
@@ -223,6 +257,8 @@ def connect(url):
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN screening_questions JSON NOT NULL DEFAULT '[]'"))
         if 'test_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN test_questions JSON NOT NULL DEFAULT '[]'"))
+    Index("ix_hiring_applications_user_resume", Application.user_id, Application.resume_sha256).create(
+        bind=engine, checkfirst=True)
     from .integration_events import install_events
     install_events()
     return engine, sessionmaker(engine, expire_on_commit=False)

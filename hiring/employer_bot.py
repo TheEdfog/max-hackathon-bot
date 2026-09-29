@@ -11,7 +11,8 @@ from .services import invite, owned_job
 from .screening import PRESETS
 
 STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "withdrawn": "отозван"}
-EVIDENCE = {'mentioned': 'есть упоминание', 'review': 'нужно уточнить', 'unknown': 'нет сведений'}
+EVIDENCE = {'mentioned': 'есть упоминание', 'review': 'нужно уточнить',
+            'indirect': 'косвенный признак', 'unknown': 'нет сведений'}
 
 
 def requirement_summary(requirements):
@@ -172,7 +173,7 @@ def handle_employer(db, user, session, text, config, reply):
                 reply(f'Резюме · часть {page + 1}\n{chunk or "Конец резюме."}', buttons, application_id=row.id)
             elif command == '/evidence':
                 index = page_number(parts[2] if len(parts) > 2 else 0)
-                items = evidence(row.resume, row.answers, job.requirements)['requirements']
+                items = evidence(row.resume, row.answers, job.requirements, row.normalized_skills)['requirements']
                 if index >= len(items):
                     reply('Требование не найдено.', [('К карточке', '/view ' + row.id)])
                 else:
@@ -183,9 +184,11 @@ def handle_employer(db, user, session, text, config, reply):
                         buttons.append(('⬅️ Требование', f'/evidence {row.id} {index - 1}'))
                     if index + 1 < len(items):
                         buttons.append(('Требование ➡️', f'/evidence {row.id} {index + 1}'))
-                    reply(f"{r['label']} · {EVIDENCE[r['state']]}\n\nЦитата:\n{quote}\n\nОтвет:\n{r['answer'] or 'Уточнение не запрашивалось или ещё не получено.'}", buttons, application_id=row.id)
+                    related = ', '.join(r['indirect_sources'])
+                    note = f'Косвенный источник: {related}\n\n' if related else ''
+                    reply(f"{r['label']} · {EVIDENCE[r['state']]}\n\n{note}Цитата:\n{quote}\n\nОтвет:\n{r['answer'] or 'Уточнение не запрашивалось или ещё не получено.'}", buttons, application_id=row.id)
             else:
-                summary = '\n'.join(f"• {r['label']}: {EVIDENCE[r['state']]}" for r in evidence(row.resume, row.answers, job.requirements)['requirements'])
+                summary = '\n'.join(f"• {r['label']}: {EVIDENCE[r['state']]}" for r in evidence(row.resume, row.answers, job.requirements, row.normalized_skills)['requirements'])
                 buttons = [('Цитаты и ответы', '/evidence ' + row.id), ('Полное резюме', '/resume ' + row.id)]
                 if any(q.get('kind') == 'screening' for q in row.questions):
                     buttons.append(('Ожидания кандидата', '/screening-answers ' + row.id))

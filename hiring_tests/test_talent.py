@@ -45,8 +45,8 @@ def test_long_pdf_is_rejected_not_silently_truncated():
 
 @pytest.mark.parametrize('text,skill,state', [
     ('Разработал сервис на питоне.', 'python', 'mentioned'), ('Использовал postres для каталога.', 'postgresql', 'mentioned'),
-    ('Использовал postres для каталога.', 'sql', 'unknown'), ('Использовал SQL для каталога.', 'postgresql', 'unknown'),
-    ('Нет опыта PostgreSQL.', 'sql', 'unknown'), ('Хочу изучить PostgreSQL.', 'sql', 'unknown'),
+    ('Использовал postres для каталога.', 'sql', 'indirect'), ('Использовал SQL для каталога.', 'postgresql', 'unknown'),
+    ('Нет опыта PostgreSQL.', 'sql', 'review'), ('Хочу изучить PostgreSQL.', 'sql', 'review'),
     ('Использовал PostgreSQL, но SQL не знаю.', 'sql', 'review'),
     ('Работал с NoSQL.', 'sql', 'unknown'), ('Использовал MySQL.', 'sql', 'unknown'),
     ('Использовал Python, но Docker не знаю.', 'python', 'review'),

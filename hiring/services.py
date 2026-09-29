@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from .db import Application, ApplicationReview, ResumeDocument, GithubReview, Audit, BotSession, Job, Outbox, User
 from .chat_ui import queue_message
-from .matching import evidence, questions
+from .matching import NORMALIZATION_VERSION, evidence, normalize_resume, questions, resume_digest
 from .sandbox import destination
 from .screening import screening_questions
 
@@ -25,7 +25,7 @@ def application_view(db, app):
             "company": job.company, "resume": app.resume, "answers": app.answers,
             "questions": app.questions, "status": app.status, "invitation": app.invitation,
             "created_at": app.created_at.isoformat(), "consent_at": app.consent_at.isoformat(),
-            "assessment": evidence(app.resume, app.answers, job.requirements),
+            "assessment": evidence(app.resume, app.answers, job.requirements, app.normalized_skills),
             "timeline": [{"action": x.action, "at": x.created_at.isoformat()} for x in db.scalars(select(Audit).where(Audit.application_id == app.id).order_by(Audit.created_at))]}
 
 
@@ -39,8 +39,23 @@ def submit(db, user, job, resume):
         if existing.status == "withdrawn":
             raise HTTPException(409, "Отклик был отозван. Для повторного отклика свяжитесь с работодателем.")
         return existing
+    resume_sha256 = resume_digest(resume)
+    cached = db.execute(select(Application.normalized_skills).where(
+        Application.user_id == user.id,
+        Application.resume_sha256 == resume_sha256,
+        Application.status != 'withdrawn',
+        Application.resume == resume,
+    ).order_by(Application.created_at.desc())).scalars().first()
+    if (isinstance(cached, dict)
+            and cached.get('version') == NORMALIZATION_VERSION
+            and cached.get('resume_sha256') == resume_sha256
+            and isinstance(cached.get('mentions'), dict)):
+        normalized_skills = cached
+    else:
+        normalized_skills = normalize_resume(resume)
     app = Application(job_id=job.id, user_id=user.id, resume=resume,
-                      questions=questions(resume, job.requirements) + screening_questions(job.screening_questions or []) +
+                      resume_sha256=resume_sha256, normalized_skills=normalized_skills,
+                      questions=questions(resume, job.requirements, normalized_skills) + screening_questions(job.screening_questions or []) +
                       [{key: q[key] for key in ('id', 'label', 'text', 'kind')} for q in (job.test_questions or [])])
     app.status = "clarifying" if app.questions else "ready"
     db.add(app)
@@ -108,7 +123,8 @@ def withdraw_application(db, app):
     session = db.get(BotSession, candidate.id)
     if session and session.state.get('application_id') == app.id:
         session.state = {}
-    app.resume, app.answers, app.questions, app.invitation, app.status = '', {}, [], '', 'withdrawn'
+    app.resume, app.resume_sha256 = '', ''
+    app.normalized_skills, app.answers, app.questions, app.invitation, app.status = {}, {}, [], '', 'withdrawn'
     for model in (ResumeDocument, ApplicationReview, GithubReview):
         private = db.get(model, app.id)
         if private:
