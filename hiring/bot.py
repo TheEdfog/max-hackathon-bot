@@ -4,7 +4,9 @@ import json
 from fastapi import HTTPException
 from sqlalchemy import select
 from .chat_ui import PAGE_SIZE, consume_action, page_number, queue_message
-from .db import Application, BotEvent, BotSession, Job, Outbox, SandboxSwitch, User, serialize_writes
+from .db import AIReview, Application, BotEvent, BotSession, Job, Outbox, SandboxSwitch, User, serialize_writes
+from .ai_review import (consent_digest, consent_text as ai_consent_text, decline_review,
+                        employer_policy, provider_for, request_review, withdraw_review)
 from .employer_bot import handle_employer
 from .demo_bot import handle_demo
 from .outbox import start_worker
@@ -88,6 +90,44 @@ def handle_update(db, event, config):
               choices + [('Пропустить вопрос', 'Пропускаю уточнение, сведений недостаточно.'), ('Продолжить позже', '/pause'), ('Условия вакансии', '/vacancy ' + app.job_id)],
               application_id=app.id, bind=True)
 
+    def continue_application(app, prefix='Отклик сохранён.'):
+        pending = [q for q in app.questions if not app.answers.get(q['id'])]
+        if pending and app.status == 'clarifying':
+            session.state = {'step': 'answer', 'application_id': app.id}
+            ask_question(app, prefix + '\n\n')
+        else:
+            session.state = {}
+            reply(prefix + ' Отклик доступен работодателю.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
+
+    def show_ai_consent(app, job, settings, notice=''):
+        text = ai_consent_text(job, settings)
+        session.state = {'step': 'ai_consent', 'application_id': app.id,
+                         'provider_id': settings['id'], 'base_url': settings['base_url'],
+                         'model': settings['model'], 'notice_version': settings['notice_version'],
+                         'consent_hash': consent_digest(text)}
+        reply((notice + '\n\n' if notice else '') + text,
+              [('Разрешаю ИИ-анализ', f'/ai-consent yes {app.id}'),
+               ('Продолжить без ИИ', f'/ai-consent no {app.id}')],
+              application_id=app.id, bind=True)
+
+    def offer_ai_consent(app):
+        if not config.ai_enabled or user.role != 'candidate' or user.demo or config.sandbox:
+            return False
+        job = db.get(Job, app.job_id)
+        employer = db.get(User, job.owner_id) if job else None
+        settings = provider_for(config, employer.company if employer else '')
+        previous = db.get(AIReview, app.id)
+        if not settings or previous and previous.status in ('pending', 'working', 'completed'):
+            return False
+        show_ai_consent(app, job, settings)
+        return True
+
+    def after_submit(app):
+        if offer_ai_consent(app):
+            return True
+        continue_application(app)
+        return False
+
     if kind == 'message_callback':
         # MAX rejects an empty acknowledgement with proto.payload (HTTP 400).
         # A neutral notification also covers stale/foreign-role buttons without
@@ -146,20 +186,20 @@ def handle_update(db, event, config):
         return
     if text in ('/privacy', '/help', '/start') or kind == 'bot_started' and not event.get('payload'):
         if text == '/privacy':
-            reply('Тестовая версия: используйте вымышленные данные. Компания из вакансии увидит имя, опыт и ответы. MAX ID нужен для уведомлений. Сведения хранятся на сервере бота, во внешнюю языковую модель не передаются. Решение принимает человек. Не присылайте паспорт и чувствительные сведения. Отзыв через «Мои отклики» очищает тексты в базе откликов и серверной очереди. Уже доставленные сообщения MAX и резервные копии этим не удаляются. Сроки и очистка тестового стенда описаны в регламенте проекта.', [('Мои отклики', '/status'), ('Меню', '/help')])
+            reply('Работодатель получает сведения, которые вы отправили для отклика. Резюме не передаётся модели без отдельного согласия в отдельном сообщении. Если согласие показано, там указаны модель, оператор и ссылка на полную информацию; без согласия отклик продолжается обычным способом. Решение о найме принимает человек. Не отправляйте паспортные и чувствительные сведения. Отзыв отклика командой /withdraw очищает его резюме, ответы и ИИ-сводку из рабочей базы; уже доставленные сообщения MAX и резервные копии могут сохраниться.', [('Мои отклики', '/status'), ('Меню', '/help')])
         elif user.role == 'employer':
             reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Сводка откликов', '/metrics'), ('Библиотека тестов', '/tests'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         else:
             reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия - используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         return
-    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers'}
+    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/ai-review', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/ai-withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers', '/ai-consent'}
     known_commands.update({'/tests', '/test-template', '/newtest', '/archive-test', '/job-test', '/use-test', '/test-answers'})
     known_commands.update({'/import-preview', '/import-confirm', '/import-edit', '/import-add'})
     if command.startswith('/') and command not in known_commands:
         reply('Команда не распознана. Откройте меню или продолжите текущий шаг обычным сообщением.')
         return
     from .imports import handle_import
-    if handle_import(db, user, session, text, reply, ask_question):
+    if handle_import(db, user, session, text, reply, ask_question, after_submit):
         return
     if handle_employer(db, user, session, text, config, reply):
         return
@@ -176,7 +216,71 @@ def handle_update(db, event, config):
                 from .imports import cancel_import
                 cancel_import(db, session)
                 session.state = {'step': 'consent', 'job_id': job.id}
-                reply(f'{job.title} · {job.company}\n{job.terms}\n\n{job.description[:1500]}\n\nРаботодатель получит ваше имя, опыт и ответы для рассмотрения отклика. Автоматического решения о найме нет. Для теста используйте вымышленные сведения.', [('Согласен, продолжить', 'Согласен'), ('Обработка данных', '/privacy'), ('Отмена', '/cancel')], bind=True)
+                employer = db.get(User, job.owner_id)
+                notice = employer_policy(config, employer.company if employer else '')
+                policy = f'\n\nПолная информация об обработке данных: {notice["notice_url"]}' if notice else ''
+                reply(f'{job.title} · {job.company}\n{job.terms}\n\n{job.description[:1500]}\n\nДля отклика работодатель получит ваше имя, резюме и ответы по вакансии. Решение принимает человек. ИИ-анализ, если доступен, запрашивается отдельно и необязателен. Не отправляйте паспортные и чувствительные сведения.{policy}', [('Согласен, продолжить', 'Согласен'), ('Обработка данных', '/privacy'), ('Отмена', '/cancel')], bind=True)
+    elif command == '/ai-consent':
+        parts = text.split()
+        if len(parts) == 2:
+            app = db.get(Application, parts[1])
+            if not app or app.user_id != user.id or app.status == 'withdrawn':
+                reply('Отклик не найден.')
+                return
+            job = db.get(Job, app.job_id)
+            employer = db.get(User, job.owner_id) if job else None
+            settings = provider_for(config, employer.company if employer else '')
+            previous = db.get(AIReview, app.id)
+            if not settings:
+                reply('ИИ-анализ сейчас не настроен. Отклик остаётся доступен работодателю.', [('Мой отклик', '/application ' + app.id)])
+            elif previous and previous.status in ('pending', 'working', 'completed'):
+                reply('Решение по ИИ-анализу уже сохранено.', [('Мой отклик', '/application ' + app.id)])
+            else:
+                show_ai_consent(app, job, settings)
+        elif (len(parts) == 3 and parts[1] in ('yes', 'no')
+              and state.get('step') == 'ai_consent' and state.get('application_id') == parts[2]):
+            app = db.get(Application, parts[2])
+            if not app or app.user_id != user.id or app.status == 'withdrawn':
+                session.state = {}
+                reply('Отклик не найден.')
+                return
+            job = db.get(Job, app.job_id)
+            employer = db.get(User, job.owner_id) if job else None
+            settings = provider_for(config, employer.company if employer else '')
+            if not settings:
+                session.state = {}
+                reply('Настройка ИИ изменилась. Резюме не отправлено, отклик сохранён.', [('Мой отклик', '/application ' + app.id)])
+                return
+            text = ai_consent_text(job, settings)
+            if (state.get('provider_id') != settings['id']
+                    or state.get('base_url') != settings['base_url']
+                    or state.get('model') != settings['model']
+                    or state.get('notice_version') != settings['notice_version']
+                    or state.get('consent_hash') != consent_digest(text)):
+                show_ai_consent(app, job, settings, 'Настройки обработки обновились. Проверьте условия ещё раз.')
+                return
+            if parts[1] == 'yes':
+                request_review(db, app, user, job, settings, text)
+                session.state = {}
+                db.flush()
+                reply('Согласие записано отдельно. ИИ подготовит черновую сводку; рекрутер получит только результат, а решение останется за человеком.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
+                continue_application(app, 'Согласие записано.')
+            else:
+                decline_review(db, app, job, settings, text)
+                session.state = {}
+                continue_application(app, 'Хорошо, резюме останется без ИИ-анализа.')
+        else:
+            reply('Чтобы выбрать, откройте свой отклик и нажмите отдельную кнопку согласия.', [('Мои отклики', '/status')])
+    elif command == '/ai-withdraw':
+        app_id = text.partition(' ')[2].strip()
+        app = db.get(Application, app_id)
+        ai = db.get(AIReview, app_id) if app else None
+        if not app or app.user_id != user.id or not ai or ai.decision != 'granted' or ai.status == 'revoked':
+            reply('Активного согласия на ИИ-анализ нет.', [('Мои отклики', '/status')])
+        else:
+            session.state = {'step': 'ai_withdraw_confirm', 'application_id': app.id}
+            reply('Отозвать только согласие на ИИ-анализ? Отклик останется у работодателя. Если запрос уже отправлен модели, отменить уже состоявшуюся обработку может быть невозможно.',
+                  [('Отозвать согласие', 'Отозвать ИИ'), ('Оставить как есть', '/cancel')], application_id=app.id, bind=True)
     elif command == '/status':
         page = page_number(text.partition(' ')[2])
         apps = list(db.scalars(select(Application).where(Application.user_id == user.id).order_by(Application.created_at.desc(), Application.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
@@ -214,9 +318,28 @@ def handle_update(db, event, config):
                 buttons.append(('Продолжить уточнения', '/continue ' + app.id))
             if app.status == 'invited':
                 buttons.append(('Подтвердить интерес', '/confirm ' + app.id))
+            ai = db.get(AIReview, app.id)
+            if ai and ai.decision == 'granted' and ai.status != 'revoked':
+                buttons.append(('Отозвать согласие на ИИ', '/ai-withdraw ' + app.id))
+            if app.status != 'withdrawn' and (not ai or ai.status in ('declined', 'revoked', 'failed', 'expired')):
+                job = db.get(Job, app.job_id)
+                employer = db.get(User, job.owner_id) if job else None
+                if provider_for(config, employer.company if employer else ''):
+                    buttons.append(('ИИ-анализ (необязательно)', '/ai-consent ' + app.id))
             if app.status != 'withdrawn':
                 buttons.append(('Отозвать отклик', '/withdraw ' + app.id))
-            reply(f"{db.get(Job, app.job_id).title}\n{STATUS[app.status]}\n{app.invitation}", buttons + [('Мои отклики', '/status')], application_id=app.id)
+            ai_status = f'\nИИ-анализ: {ai.status}' if ai else ''
+            reply(f"{db.get(Job, app.job_id).title}\n{STATUS[app.status]}{ai_status}\n{app.invitation}", buttons + [('Мои отклики', '/status')], application_id=app.id)
+    elif state.get('step') == 'ai_withdraw_confirm':
+        if text.lower() != 'отозвать ии':
+            session.state = {}
+            reply('Отклик оставлен без изменений.', [('Мой отклик', '/application ' + state['application_id'])])
+        else:
+            app = db.get(Application, state['application_id'])
+            if app and app.user_id == user.id:
+                withdraw_review(db, app)
+            session.state = {}
+            reply('Согласие на ИИ-анализ отозвано. Результат удалён; отклик и резюме сохранены.', [('Мой отклик', '/application ' + state['application_id'])])
     elif state.get('step') == 'withdraw_confirm':
         if text.lower() != 'отозвать':
             reply('Выберите «Отозвать» или отмените действие.')
@@ -255,13 +378,7 @@ def handle_update(db, event, config):
                     session.state = {}
                     reply(str(exc.detail))
                     return
-                pending = [q for q in app.questions if not app.answers.get(q['id'])]
-                if pending and app.status == 'clarifying':
-                    session.state = {'step': 'answer', 'application_id': app.id}
-                    ask_question(app, 'Отклик сохранён.\n\n')
-                else:
-                    session.state = {}
-                    reply('Отклик сохранён и доступен работодателю.', [('Мой отклик', '/application ' + app.id)], application_id=app.id)
+                after_submit(app)
     elif state.get('step') in ('import_waiting', 'import_ready'):
         if state.get('step') == 'import_ready':
             reply('Проверьте текст, дополните или замените его, затем подтвердите отправку.',

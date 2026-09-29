@@ -40,7 +40,7 @@ GitHub Actions выполняет тесты, сверяет OpenAPI с прил
 - `hiring/` — бот, API, хранение, интеграции и извлечение требований.
 - `hiring_tests/` — тесты текущего продукта.
 - `tools/data_api/` — схема, валидатор организаторов и изолированный API-проверяющий.
-- `docs/` — [ручная приёмка](docs/ACCEPTANCE.md), [конфиденциальность](docs/DATA-POLICY.md), [интеграция](docs/HR-INTEGRATION.md), [развёртывание](docs/DEPLOYMENT.md) и [план пилота](docs/PILOT.md).
+- `docs/` — [ручная приёмка](docs/ACCEPTANCE.md), [конфиденциальность](docs/DATA-POLICY.md), [настройка согласованного ИИ-разбора](docs/AI-REVIEW.md), [интеграция](docs/HR-INTEGRATION.md), [развёртывание](docs/DEPLOYMENT.md) и [план пилота](docs/PILOT.md).
 
 Сводка текущих возможностей — [версия 1.7](docs/SIMPLIFIED-1.7.md); оставшиеся конкурсные шаги и результаты — [статус релиза](docs/RELEASE-READINESS.md). [PPTX и PDF](docs/presentation/README.md) сохранены для команды; презентация описывает более ранний снимок и требует синхронизации с текущей версией перед сдачей.
 

@@ -41,6 +41,7 @@ docs/test_reports/
 *.key
 ssh-key-*.zip
 data/
+config/ai-providers.local.json
 test-results/
 .coverage
 playwright-report/

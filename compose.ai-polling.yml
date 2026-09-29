@@ -1,0 +1,7 @@
+# Add only after creating the private config/ai-providers.local.json.
+services:
+  bot:
+    environment:
+      HIRING_AI_CONFIG_JSON: /app/config/ai-providers.local.json
+    volumes:
+      - ./config/ai-providers.local.json:/app/config/ai-providers.local.json:ro

@@ -77,6 +77,7 @@ class AppPrivate(BaseModel):
     questions: list[dict]
     invitation: str
     assessment: dict
+    ai_review: dict
     timeline: list[dict]
     created_at: datetime
     consent_at: datetime

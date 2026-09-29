@@ -1,0 +1,15 @@
+{
+  "providers": {
+    "cloudru-gigachat": {
+      "name": "Cloud.ru Foundation Models",
+      "base_url": "https://foundation-models.api.cloud.ru/v1",
+      "model": "ai-sage/GigaChat3-10B-A1.8B",
+      "api_key_env": "CLOUDRU_API_KEY",
+      "processor_name": "ООО «Облачные технологии»",
+      "processor_address": "",
+      "processing_location": "Россия",
+      "data_handling": "По документации Cloud.ru, данные пользователей для внутренних моделей не логируются и не хранятся; перед пилотом проверьте условия своего договора"
+    }
+  },
+  "companies": {}
+}

@@ -66,6 +66,34 @@ class Application(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AIReview(Base):
+    """Optional model analysis and evidence of the candidate's separate consent."""
+    __tablename__ = "hiring_ai_reviews"
+    application_id: Mapped[str] = mapped_column(ForeignKey("hiring_applications.id"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default="declined")
+    provider_id: Mapped[str] = mapped_column(String(80), default="")
+    provider_name: Mapped[str] = mapped_column(String(160), default="")
+    processor_name: Mapped[str] = mapped_column(String(200), default="")
+    base_url: Mapped[str] = mapped_column(Text, default="")
+    api_key_env: Mapped[str] = mapped_column(String(80), default="")
+    model: Mapped[str] = mapped_column(String(160), default="")
+    resume_sha256: Mapped[str] = mapped_column(String(64), default="")
+    decision: Mapped[str] = mapped_column(String(12), default="")
+    decision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consent_version: Mapped[str] = mapped_column(String(40), default="")
+    consent_text: Mapped[str] = mapped_column(Text, default="")
+    consent_text_sha256: Mapped[str] = mapped_column(String(64), default="")
+    notice_url: Mapped[str] = mapped_column(Text, default="")
+    notice_version: Mapped[str] = mapped_column(String(80), default="")
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str] = mapped_column(String(40), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class AssessmentTemplate(Base):
     __tablename__ = 'hiring_assessment_templates'
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
@@ -223,6 +251,7 @@ def connect(url):
     Base.metadata.create_all(engine)
     # Additive v1 -> v2 migration. Startup is single-process; existing data is kept.
     columns = {c['name'] for c in inspect(engine).get_columns('hiring_outbox')}
+    ai_columns = {c['name'] for c in inspect(engine).get_columns('hiring_ai_reviews')}
     with engine.begin() as connection:
         application_columns = {c['name'] for c in inspect(engine).get_columns('hiring_applications')}
         missing_normalization = 'normalized_skills' not in application_columns
@@ -257,6 +286,8 @@ def connect(url):
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN screening_questions JSON NOT NULL DEFAULT '[]'"))
         if 'test_questions' not in {c['name'] for c in inspect(engine).get_columns('hiring_jobs')}:
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN test_questions JSON NOT NULL DEFAULT '[]'"))
+        if 'expires_at' not in ai_columns:
+            connection.execute(text('ALTER TABLE hiring_ai_reviews ADD COLUMN expires_at DATETIME'))
     application_indexes = {index['name'] for index in inspect(engine).get_indexes('hiring_applications')}
     if 'ix_hiring_applications_user_resume' not in application_indexes:
         resume_index = next(index for index in Application.__table__.indexes

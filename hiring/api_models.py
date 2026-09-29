@@ -69,7 +69,7 @@ class ApplicationBody(BaseModel):
 
 
 class AnswersBody(BaseModel):
-    answers: dict[str, str] = Field(max_length=9)
+    answers: dict[str, str] = Field(max_length=10)
 
     @field_validator("answers")
     @classmethod
