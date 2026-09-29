@@ -1,7 +1,7 @@
 """Local vacancy requirement extraction and its canonical skill vocabulary."""
 from __future__ import annotations
 import re
-from .skills import normalize_skill
+from .skills import SKILL_ALIASES, normalize_skill
 
 REQUIREMENT_CATEGORIES: dict[str, tuple[str, str]] = {
     "python": ("technology", "Python"),
@@ -332,6 +332,18 @@ KNOWN_SKILL_ALIASES: dict[str, list[str]] = {
     "crm": ["работа с crm", "crm"],
 }
 
+_aliases_by_skill: dict[str, set[str]] = {}
+for skill, aliases in KNOWN_SKILL_ALIASES.items():
+    canonical = normalize_skill(skill)
+    _aliases_by_skill[canonical] = {alias.strip().lower() for alias in aliases} | {canonical}
+for alias, canonical in SKILL_ALIASES.items():
+    _aliases_by_skill.setdefault(normalize_skill(canonical), set()).add(alias.strip().lower())
+REQUIREMENT_ALIASES = {
+    skill: tuple(sorted(set(aliases), key=lambda alias: (-len(alias), alias)))
+    for skill, aliases in _aliases_by_skill.items()
+}
+del _aliases_by_skill
+
 NEUTRAL_STACK_MARKERS = (
     "наш стек",
     "стек:",
@@ -469,7 +481,7 @@ def _context_start_before(text: str, position: int) -> int:
     return max(text.rfind(boundary, 0, position) for boundary in boundaries) + 1
 
 def _find_skill_positions(text: str, skill_norm: str) -> list[int]:
-    aliases = KNOWN_SKILL_ALIASES.get(skill_norm, [skill_norm])
+    aliases = REQUIREMENT_ALIASES.get(skill_norm, (skill_norm,))
     positions: list[int] = []
     for alias in aliases:
         alias = alias.strip().lower()
@@ -485,7 +497,7 @@ def _find_skill_position(text: str, skill_norm: str) -> int | None:
 
 def _non_negated_positions(text: str, skill_norm: str) -> list[int]:
     positions = set()
-    for alias in KNOWN_SKILL_ALIASES.get(skill_norm, [skill_norm]):
+    for alias in REQUIREMENT_ALIASES.get(skill_norm, (skill_norm,)):
         pattern = rf"(?<![a-zа-я0-9]){re.escape(alias)}(?![a-zа-я0-9])"
         for match in re.finditer(pattern, text, re.I):
             if not _is_negated_mention(text, match.start(), match.end()):
@@ -509,7 +521,7 @@ def extract_requirements_locally(raw_text: str) -> list[dict]:
     result: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
-    for skill in KNOWN_SKILL_ALIASES:
+    for skill in REQUIREMENT_ALIASES:
         positions = _non_negated_positions(normalized_text, skill)
         if not positions:
             continue
