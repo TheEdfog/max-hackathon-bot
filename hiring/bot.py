@@ -71,6 +71,11 @@ def handle_update(db, event, config):
         return
     db.add(BotEvent(id=digest))
     db.flush()
+    if not config.sandbox and kind == 'message_created':
+        from .teams import handle_max_command
+        display_name = identity.get('name') or identity.get('first_name') or 'Рекрутер'
+        if handle_max_command(db, max_id, display_name if isinstance(display_name, str) else 'Рекрутер', text):
+            return
     if text == '/whoami':
         db.add(Outbox(max_id=max_id, body={'text': 'Ваш MAX ID для настройки локального теста: ' + max_id}))
         return
@@ -89,6 +94,9 @@ def handle_update(db, event, config):
             user = User(max_id=max_id, name=name[:160] if isinstance(name, str) else 'Кандидат', role='candidate')
             db.add(user)
             db.flush()
+        elif user.role == 'disabled':
+            db.add(Outbox(max_id=max_id, body={'text': 'Доступ к компании отключён. Обратитесь к администратору.'}))
+            return
         session = db.get(BotSession, user.id)
         if not session:
             session = BotSession(user_id=user.id, state={})
@@ -205,11 +213,14 @@ def handle_update(db, event, config):
         if text == '/privacy':
             reply('Работодатель получает сведения, которые вы отправили для отклика. Резюме не передаётся модели без отдельного согласия в отдельном сообщении. Если согласие показано, там указаны модель, оператор и ссылка на полную информацию; без согласия отклик продолжается обычным способом. Решение о найме принимает человек. Не отправляйте паспортные и чувствительные сведения. Отзыв отклика командой /withdraw очищает его резюме, ответы и ИИ-сводку из рабочей базы; уже доставленные сообщения MAX и резервные копии могут сохраниться.', [('Мои отклики', '/status'), ('Меню', '/help')])
         elif user.role == 'employer':
-            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Сводка откликов', '/metrics'), ('Библиотека тестов', '/tests'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
+            buttons = [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Сводка откликов', '/metrics'), ('Библиотека тестов', '/tests')]
+            if user.company_role == 'admin':
+                buttons.append(('Пригласить рекрутера', '/team-invite'))
+            reply(f'РезюмИТ Найм · {user.company}\nСоздайте вакансию, проверьте требования и отправьте кандидатам ссылку. Решение о приглашении принимаете вы.', buttons + [('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         else:
             reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия - используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         return
-    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/reject', '/reject-confirm', '/resume', '/evidence', '/ai-review', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/ai-withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers', '/ai-consent'}
+    known_commands = {'/employer', '/team-invite', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/reject', '/reject-confirm', '/resume', '/evidence', '/ai-review', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/ai-withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers', '/ai-consent'}
     known_commands.update({'/tests', '/test-template', '/newtest', '/archive-test', '/job-test', '/use-test', '/test-answers'})
     known_commands.update({'/import-preview', '/import-confirm', '/import-edit', '/import-add'})
     if command.startswith('/') and command not in known_commands:

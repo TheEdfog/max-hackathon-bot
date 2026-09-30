@@ -20,6 +20,7 @@ from .db import Application, Audit, Job, Outbox, User, connect, serialize_writes
 from .matching import extract
 from .security import check_password, hash_password, max_identity, token_for
 from .services import answer, application_view, confirm, invite, owned_job, submit, withdraw_application
+from .teams import create_company
 
 
 def create_app(config=None):
@@ -40,7 +41,7 @@ def create_app(config=None):
             worker[1].join(timeout=15)
         engine.dispose()
 
-    app = FastAPI(title="РезюмИТ Найм", version="1.7.3", lifespan=lifespan)
+    app = FastAPI(title="РезюмИТ Найм", version="1.8.0", lifespan=lifespan)
     app.state.factory, app.state.config = factory, config
     buckets = defaultdict(deque)
 
@@ -67,7 +68,8 @@ def create_app(config=None):
                 chunks.append(chunk)
             request._body = b''.join(chunks)  # Starlette cached request reused by call_next.
         integration = request.url.path.startswith('/api/integrations/') or request.url.path.startswith('/api/integration-keys')
-        if request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer' or integration:
+        if (request.url.path.startswith("/api/auth") or request.url.path == '/api/me/employer'
+                or request.url.path.startswith('/api/company') or integration):
             key = (request.client.host if request.client else "unknown", 'integration' if integration else 'auth')
             if len(buckets) > 10000:
                 buckets.clear()
@@ -97,19 +99,21 @@ def create_app(config=None):
                 raise ValueError()
             payload = jwt.decode(raw[7:], config.secret, algorithms=["HS256"], audience="rezumit-hiring")
             user = db.get(User, payload["sub"])
-            if not user:
+            if not user or user.role == 'disabled':
                 raise ValueError()
             return user
         except (jwt.PyJWTError, KeyError, ValueError):
             raise HTTPException(401, "Войдите в аккаунт")
 
     def employer(user=Depends(current)):
-        if user.role != "employer":
+        if (user.role != "employer" or user.company_id and
+                user.company_role not in ('admin', 'recruiter')):
             raise HTTPException(403, "Раздел доступен работодателю")
         return user
 
     def user_view(user):
-        return {"id": user.id, "name": user.name, "role": user.role, "company": user.company, "demo": user.demo, "max_connected": bool(user.max_id)}
+        return {"id": user.id, "name": user.name, "role": user.role, "company": user.company,
+                "company_role": user.company_role or None, "demo": user.demo, "max_connected": bool(user.max_id)}
 
     def auth_response(user):
         return {"token": token_for(user, config.secret), "user": user_view(user)}
@@ -139,8 +143,11 @@ def create_app(config=None):
             raise HTTPException(403, "Нужен код доступа работодателя")
         if body.role == "employer" and not body.company.strip():
             raise HTTPException(422, "Укажите название компании")
-        user = User(email=str(body.email).lower(), name=body.name.strip(), company=body.company.strip(), role=body.role, password=hash_password(body.password))
+        user = User(email=str(body.email).lower(), name=body.name.strip(), role=body.role,
+                    password=hash_password(body.password))
         db.add(user)
+        if body.role == 'employer':
+            create_company(db, user, body.company)
         try:
             db.commit()
         except IntegrityError:
@@ -194,7 +201,8 @@ def create_app(config=None):
             raise HTTPException(403, "Неверный код работодателя")
         if db.scalar(select(Application).where(Application.user_id == user.id)):
             raise HTTPException(409, "У вас уже есть отклики кандидата. Используйте отдельный аккаунт работодателя.")
-        user.role, user.company = "employer", body.company
+        user.role = 'employer'
+        create_company(db, user, body.company)
         db.commit()
         return user_view(user)
 
@@ -204,7 +212,8 @@ def create_app(config=None):
 
     @app.get("/api/jobs")
     def jobs(user=Depends(employer), db=Depends(db_session)):
-        return [job_view(db, j) for j in db.scalars(select(Job).where(Job.owner_id == user.id).order_by(Job.created_at.desc()))]
+        from .teams import company_member_ids
+        return [job_view(db, j) for j in db.scalars(select(Job).where(Job.owner_id.in_(company_member_ids(db, user))).order_by(Job.created_at.desc()))]
 
     @app.post("/api/jobs", status_code=201)
     def create_job(body: JobBody, user=Depends(employer), db=Depends(db_session)):
@@ -336,8 +345,12 @@ def create_app(config=None):
 
     @app.get("/api/metrics")
     def metrics(user=Depends(employer), db=Depends(db_session)):
-        rows = list(db.scalars(select(Application).join(Job).where(Job.owner_id == user.id, Application.status != "withdrawn")))
+        from .teams import company_member_ids
+        rows = list(db.scalars(select(Application).join(Job).where(Job.owner_id.in_(company_member_ids(db, user)), Application.status != "withdrawn")))
         return {"applications": len(rows), "ready": sum(a.status == "ready" for a in rows), "invited": sum(a.status in ("invited", "confirmed") for a in rows), "confirmed": sum(a.status == "confirmed" for a in rows), "answered_questions": sum(len(a.answers) for a in rows), "demo": user.demo}
+
+    from .teams import install_routes as install_company_routes
+    install_company_routes(app, db_session, current, employer)
 
     @app.post("/api/max/webhook")
     async def webhook(request: Request):

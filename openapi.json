@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.7.3"
+    "version": "1.8.0"
   },
   "paths": {
     "/health": {
@@ -888,6 +888,122 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/company/max-link": {
+      "post": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Link Code",
+        "operationId": "link_code_api_company_max_link_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/company/recruiter-invitations": {
+      "post": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Recruiter Invitation",
+        "operationId": "recruiter_invitation_api_company_recruiter_invitations_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteView"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/company/members": {
+      "get": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Members",
+        "operationId": "members_api_company_members_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/company/members/{member_id}": {
+      "delete": {
+        "tags": [
+          "Company"
+        ],
+        "summary": "Remove Member",
+        "operationId": "remove_member_api_company_members__member_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Member Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/max/webhook": {
@@ -2604,6 +2720,34 @@
           "message"
         ],
         "title": "InviteBody"
+      },
+      "InviteView": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "command": {
+            "type": "string",
+            "title": "Command"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "command",
+          "expires_at",
+          "notice"
+        ],
+        "title": "InviteView"
       },
       "JobAssessment": {
         "properties": {

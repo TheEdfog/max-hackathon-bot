@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import select
 from .config import Config
-from .db import User, connect
+from .db import Company, User, connect, uid
 from .security import hash_password
 
 PUBLIC_REVIEW_PASSWORDS = {
@@ -32,8 +32,14 @@ def provision(database_url, destination, public_review=False):
                     raise ValueError('Verification account exists; preserve its credentials or use a fresh test database')
                 password = (PUBLIC_REVIEW_PASSWORDS[role] if public_review
                             else secrets.token_urlsafe(24))
+                employer = role != 'candidate'
+                company_id = uid() if employer else None
+                if employer:
+                    db.add(Company(id=company_id, name=f'Synthetic API {role}'))
                 db.add(User(email=email, password=hash_password(password), name='Synthetic ' + role,
-                            company='Synthetic API verification', role='candidate' if role == 'candidate' else 'employer'))
+                            company=f'Synthetic API {role}' if employer else '', company_id=company_id,
+                            company_role='admin' if employer else '',
+                            role='employer' if employer else 'candidate'))
                 identities[role] = {'email': email, 'password': password}
             # Exclusive file creation prevents accidental overwrite. No MAX IDs are assigned.
             fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

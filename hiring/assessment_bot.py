@@ -4,6 +4,7 @@ from sqlalchemy import select
 from .assessments import TestBody, create_test, owned_test, snapshot
 from .chat_ui import PAGE_SIZE, page_number
 from .db import Application, AssessmentTemplate, Job
+from .teams import company_member_ids
 
 
 def handle_tests(db, user, session, text, reply):
@@ -16,7 +17,7 @@ def handle_tests(db, user, session, text, reply):
             reply('Выберите тест на шаге проверки новой вакансии.', buttons)
             return True
         page = page_number(parts[1] if len(parts) > 1 else 0)
-        rows = list(db.scalars(select(AssessmentTemplate).where(AssessmentTemplate.owner_id == user.id,
+        rows = list(db.scalars(select(AssessmentTemplate).where(AssessmentTemplate.owner_id.in_(company_member_ids(db, user)),
                     AssessmentTemplate.active == True).order_by(AssessmentTemplate.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
         actions = [(r.title, ('/use-test ' if choosing else '/test-template ') + r.id) for r in rows[:PAGE_SIZE]]
         if page:
@@ -79,7 +80,7 @@ def handle_tests(db, user, session, text, reply):
             reply(str(exc.detail), buttons)
     elif command == '/test-answers':
         row = db.get(Application, parts[1]) if len(parts) > 1 else None
-        if not row or row.status == 'withdrawn' or db.get(Job, row.job_id).owner_id != user.id:
+        if not row or row.status == 'withdrawn' or db.get(Job, row.job_id).owner_id not in company_member_ids(db, user):
             reply('Отклик не найден.')
         else:
             items = [q for q in row.questions if q.get('kind') == 'assessment']
