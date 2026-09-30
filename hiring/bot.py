@@ -371,7 +371,7 @@ def handle_update(db, event, config):
             reply('Для отправки отклика нужно согласие.', [('Согласен, продолжить', 'Согласен'), ('Отмена', '/cancel')], bind=True)
         else:
             session.state = {**state, 'step': 'resume'}
-            reply('Пришлите текст резюме (40-20 000 символов), PDF-файл до 5 МБ или публичную ссылку на PDF в Яндекс Диске. Текст покажем для проверки; отклик отправится только после подтверждения. Сканы не поддерживаются. Не включайте паспортные данные.')
+            reply('Отправьте текст резюме или прикрепите PDF-файл кнопкой со скрепкой (до 5 МБ). Ссылки на файлы не поддерживаются. Текст покажем для проверки; отклик отправится только после подтверждения. Сканы не читаются. Не включайте паспортные данные.')
     elif state.get('step') == 'resume':
         if attachment:
             if attachment['kind'] != 'pdf':
@@ -385,16 +385,10 @@ def handle_update(db, event, config):
                 reply('Получил PDF. Проверю файл и покажу распознанный текст. Отклик не будет отправлен без вашего подтверждения.', [('Отмена', '/cancel')])
             except SourceError as exc:
                 reply(str(exc))
-        elif text.startswith(('https://', 'http://')) and '\n' not in text and ' ' not in text:
-            from .imports import queue_import
-            from .sources import SourceError
-            try:
-                queue_import(db, user, session, text)
-                reply('Читаю публичный источник. Затем покажу текст для проверки.', [('Отмена', '/cancel')])
-            except SourceError as exc:
-                reply(str(exc))
+        elif text.startswith(('https://', 'http://')):
+            reply('Ссылки на файлы не поддерживаются. Прикрепите PDF кнопкой со скрепкой или отправьте текст резюме.')
         elif not 40 <= len(text) <= 20000 or text.startswith('/'):
-            reply('Нужен текст от 40 до 20 000 символов, PDF-файл до 5 МБ или публичная ссылка на PDF.')
+            reply('Нужен текст резюме от 40 до 20 000 символов или PDF-файл до 5 МБ, прикреплённый кнопкой со скрепкой.')
         else:
             job = db.get(Job, state['job_id'])
             if not job or not job.active:

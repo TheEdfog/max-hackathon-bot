@@ -1,12 +1,10 @@
-"""Bounded, anonymous reads of explicitly supported public sources. No LLM calls."""
+"""Bounded downloads of MAX file attachments. No external link imports or LLM calls."""
 import ipaddress
-import json
-import re
 import socket
 import threading
 import time
 from dataclasses import dataclass
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit
 import httpx
 from .pdf_extract import MAX_BYTES, extract_pdf
 
@@ -37,19 +35,8 @@ def parsed_url(value):
     return parts
 
 
-def source_kind(value):
-    p = parsed_url(value)
-    if p.hostname in ('disk.yandex.ru', 'disk.yandex.com', 'yadi.sk') and re.fullmatch(r'/[di]/[A-Za-z0-9_-]+/?', p.path):
-        return 'yandex'
-    raise SourceError('Поддерживаются только публичные PDF на Яндекс Диске. Для остальных источников загрузите PDF через API или вставьте текст.')
-
-
 def allowed_download(host, provider):
-    if provider == 'max':
-        return host == 'fd.oneme.ru'
-    if provider == 'yandex':
-        return host == 'cloud-api.yandex.net' or bool(re.fullmatch(r'[a-z0-9-]+\.(?:disk\.yandex\.(?:ru|com|net)|storage\.yandex\.net)', host))
-    return False
+    return provider == 'max' and host == 'fd.oneme.ru'
 
 
 def max_attachment_url(value):
@@ -73,7 +60,7 @@ class PublicReader:
         self.deadline = time.monotonic() + 25
         self.calls = 0
 
-    def get(self, url, provider, limit=MAX_BYTES, optional=False):
+    def get(self, url, provider, limit=MAX_BYTES):
         for _ in range(4):
             p = parsed_url(url)
             if not allowed_download(p.hostname, provider):
@@ -85,7 +72,7 @@ class PublicReader:
             self.calls += 1
             if self.calls > 8 or time.monotonic() >= self.deadline:
                 raise SourceError('Источник отвечает слишком долго. Попробуйте позже или вставьте текст.')
-            headers = {'User-Agent': 'RezumitHiring/1.3 public-import', 'Accept-Encoding': 'identity'}
+            headers = {'User-Agent': 'RezumitHiring/1.3', 'Accept-Encoding': 'identity'}
             with httpx.Client(timeout=8, follow_redirects=False, trust_env=False) as client:
                 with client.stream('GET', url, headers=headers) as response:
                     if response.status_code in (301, 302, 303, 307, 308):
@@ -93,8 +80,6 @@ class PublicReader:
                         continue
                     if response.status_code in (403, 429):
                         raise SourceError('Источник ограничил доступ или частоту запросов. Повторите позже; вход и ограничения мы не обходим.')
-                    if optional and response.status_code == 404:
-                        return b'{}'
                     if response.status_code != 200:
                         raise SourceError('Публичный файл не найден или недоступен для скачивания.')
                     size = response.headers.get('content-length', '')
@@ -107,38 +92,6 @@ class PublicReader:
                             raise SourceError('Превышен размер или время скачивания файла.')
                     return bytes(output)
         raise SourceError('Слишком много перенаправлений.')
-
-    def json(self, url, provider, optional=False):
-        return json.loads(self.get(url, provider, 512 * 1024, optional=optional))
-
-
-def _import_source(url, reader=None):
-    provider = source_kind(url)
-    reader = reader or PublicReader()
-    try:
-        if provider == 'yandex':
-            result = reader.json('https://cloud-api.yandex.net/v1/disk/public/resources/download?' +
-                                 urlencode({'public_key': url}), provider)
-            download = result.get('href', '') if isinstance(result, dict) else ''
-        raw = reader.get(download, provider)
-        if not raw.startswith(b'%PDF'):
-            raise SourceError('Ссылка не отдала PDF. Проверьте доступ «всем по ссылке». Страницы входа, папки и подтверждения скачивания не обходим.')
-        return SourceResult(extract_pdf(raw), provider,
-                            'Проверьте распознанный текст. Оригинал PDF получит только работодатель выбранной вакансии после вашего подтверждения.', raw)
-    except SourceError:
-        raise
-    except (httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
-        raise SourceError('Не удалось прочитать источник. Попробуйте позже или вставьте текст; сканы и защищённые PDF не поддерживаются.')
-
-
-def import_source(url, reader=None):
-    if not _slots.acquire(blocking=False):
-        raise SourceError('Сейчас обрабатываются другие файлы. Попробуйте через минуту или вставьте текст.')
-    try:
-        return _import_source(url, reader)
-    finally:
-        _slots.release()
-
 
 def import_max_attachment(url, size, reader=None):
     max_attachment_url(url)
