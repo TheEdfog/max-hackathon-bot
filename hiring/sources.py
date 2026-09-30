@@ -45,9 +45,27 @@ def source_kind(value):
 
 
 def allowed_download(host, provider):
+    if provider == 'max':
+        return host == 'fd.oneme.ru'
     if provider == 'yandex':
         return host == 'cloud-api.yandex.net' or bool(re.fullmatch(r'[a-z0-9-]+\.(?:disk\.yandex\.(?:ru|com|net)|storage\.yandex\.net)', host))
     return False
+
+
+def max_attachment_url(value):
+    parts = parsed_url(value)
+    if parts.hostname != 'fd.oneme.ru' or parts.fragment:
+        raise SourceError('Ссылка на вложение MAX недоступна для импорта.')
+    return value
+
+
+def validate_max_pdf(filename, size, url):
+    if (not isinstance(filename, str) or len(filename) > 255
+            or not filename.lower().endswith('.pdf') or any(ord(char) < 32 for char in filename)):
+        raise SourceError('Пришлите один PDF-файл. Другие форматы пока не поддерживаются.')
+    if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= MAX_BYTES:
+        raise SourceError('PDF должен быть не больше 5 МБ.')
+    return max_attachment_url(url)
 
 
 class PublicReader:
@@ -118,5 +136,28 @@ def import_source(url, reader=None):
         raise SourceError('Сейчас обрабатываются другие файлы. Попробуйте через минуту или вставьте текст.')
     try:
         return _import_source(url, reader)
+    finally:
+        _slots.release()
+
+
+def import_max_attachment(url, size, reader=None):
+    max_attachment_url(url)
+    if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= MAX_BYTES:
+        raise SourceError('PDF должен быть не больше 5 МБ.')
+    if not _slots.acquire(blocking=False):
+        raise SourceError('Сейчас обрабатываются другие файлы. Попробуйте через минуту или вставьте текст.')
+    try:
+        reader = reader or PublicReader()
+        raw = reader.get(url, 'max')
+        if len(raw) != size:
+            raise SourceError('Размер PDF не совпал с данными MAX. Отправьте файл ещё раз.')
+        if not raw.startswith(b'%PDF'):
+            raise SourceError('Вложение не удалось прочитать как PDF. Проверьте файл и отправьте его ещё раз.')
+        try:
+            text = extract_pdf(raw)
+        except ValueError as exc:
+            raise SourceError('Не удалось прочитать PDF. Нужен текстовый PDF до 5 МБ и 10 страниц; сканы не поддерживаются.') from exc
+        return SourceResult(text, 'max',
+                            'Проверьте распознанный текст. Оригинал PDF получит только работодатель выбранной вакансии после вашего подтверждения.', raw)
     finally:
         _slots.release()

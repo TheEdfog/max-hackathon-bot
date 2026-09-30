@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.7.1"
+    "version": "1.7.2"
   },
   "paths": {
     "/health": {
