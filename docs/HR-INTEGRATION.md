@@ -35,16 +35,21 @@ python -m hiring.integration_keys --owner-id INTERNAL_EMPLOYER_ID --revoke KEY_I
 | Право | Методы после префикса v1 |
 | --- | --- |
 | `jobs:read` | GET `/jobs`, `/jobs/{id}` — условия, требования, активность, ссылки отклика, внешний ID |
-| `jobs:write` | PUT `/jobs/by-external/{source}/{external_id}`; PATCH `/jobs/{id}` с `{"active":false}` |
+| `jobs:write` | PUT `/jobs/by-external/{source}/{external_id}`; PATCH `/jobs/{id}` с `{"active":false}` (закрыть приём) или `{"active":true}` (открыть) |
 | `applications:read` | GET `/applications`, `/applications/{id}` — статусы и прогресс без текстов кандидата |
 | `applications:pii` | Вместе с `applications:read`: текст, имя, ответы, цитаты и история **в детальной карточке** |
 | `invitations:write` | POST `/applications/{id}/invite` с `{"message":"…"}` |
+| `applications:decision` | POST `/applications/{id}/reject` — отказать и поставить уведомление кандидату в очередь MAX |
 | `events:read` | GET `/events?after=0&limit=100` — изменения вакансий и откликов |
 | `metrics:read` | GET `/metrics` — активные вакансии и фактические статусы |
 | `tests:read` | GET `/tests`, `/tests/{id}` - собственная библиотека и закрытые критерии проверки |
 | `tests:write` | POST `/tests`, PUT `/tests/{id}` - создание, новая версия, архивирование |
 
 По умолчанию выдаются четыре read-права без PII. Список откликов не содержит резюме даже с PII-правом. Наличие права не заменяет согласованный порядок обработки данных работодателем.
+
+Закрыть вакансию можно через `PATCH /jobs/{id}` с правом `jobs:write` и телом `{"active":false}`. Сохранённые отклики остаются доступны; новые отклики получают `409 Приём откликов завершён`. Чтобы открыть вакансию снова, передайте `{"active":true}`.
+
+Отправить кандидату стандартное вежливое уведомление об отказе можно запросом `POST /applications/{id}/reject` с правом `applications:decision` и без тела. Ответ `200` содержит статус `rejected` и признак доставки (`queued` или `no_max_link`). Операция идемпотентна: повторный запрос не отправляет второе сообщение. Отказ отражается в фильтре статусов и ленте событий как `application.rejected`.
 
 ## Новые методы 1.3
 

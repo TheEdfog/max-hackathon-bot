@@ -7,10 +7,10 @@ from .skills import normalize_skill
 from .db import AIReview, Application, BotAttempt, Job, User, now
 from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract
-from .services import invite, owned_job
+from .services import invite, owned_job, reject_application
 from .screening import PRESETS
 
-STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "withdrawn": "отозван"}
+STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "rejected": "отказ работодателя", "withdrawn": "отозван"}
 EVIDENCE = {'mentioned': 'есть упоминание', 'review': 'нужно уточнить',
             'indirect': 'косвенный признак', 'unknown': 'нет сведений'}
 
@@ -67,8 +67,9 @@ def handle_employer(db, user, session, text, config, reply):
     from .assessment_bot import handle_tests
     if handle_tests(db, user, session, text, reply):
         return True
-    if command in ('/jobs', '/job', '/candidates', '/view', '/resume', '/evidence', '/ai-review', '/metrics') and state.get('step') == 'invite_message':
+    if command in ('/jobs', '/job', '/candidates', '/view', '/invite', '/reject', '/resume', '/evidence', '/ai-review', '/metrics') and state.get('step') in ('invite_message', 'reject_confirm'):
         session.state = {}
+        state = {}
     if command in ('/screening', '/screening-on', '/screening-off'):
         if state.get('step') != 'job_review':
             reply('Сначала создайте вакансию и перейдите к проверке требований.')
@@ -104,7 +105,7 @@ def handle_employer(db, user, session, text, config, reply):
         counts = dict(db.execute(select(Application.status, func.count()).join(Job).where(
             Job.owner_id == user.id, Application.status != 'withdrawn').group_by(Application.status)).all())
         jobs = db.scalar(select(func.count()).select_from(Job).where(Job.owner_id == user.id, Job.active == True))
-        reply(f"Сводка · {user.company}\n\nОткрытых вакансий: {jobs}\nОткликов: {sum(counts.values())}\nУточняют сведения: {counts.get('clarifying', 0)}\nЖдут вашего решения: {counts.get('ready', 0)}\nПриглашены, ждём ответа: {counts.get('invited', 0)}\nПодтвердили интерес: {counts.get('confirmed', 0)}\n\nЭто фактические статусы, не оценка качества кандидатов. Отозванные отклики не учитываются.",
+        reply(f"Сводка · {user.company}\n\nОткрытых вакансий: {jobs}\nОткликов: {sum(counts.values())}\nУточняют сведения: {counts.get('clarifying', 0)}\nЖдут вашего решения: {counts.get('ready', 0)}\nПриглашены, ждём ответа: {counts.get('invited', 0)}\nПодтвердили интерес: {counts.get('confirmed', 0)}\nОтказано: {counts.get('rejected', 0)}\n\nЭто фактические статусы, не оценка качества кандидатов. Отозванные отклики не учитываются.",
               [('Мои вакансии', '/jobs'), ('Новая вакансия', '/newjob'), ('Меню', '/help')])
     elif command == "/jobs":
         page = page_number(text.partition(' ')[2])
@@ -145,14 +146,30 @@ def handle_employer(db, user, session, text, config, reply):
                 reply(f'{job.title}\nОтклики · страница {page + 1}.\n' + ('Выберите кандидата. Порядок - по времени отклика, не рейтинг.' if rows else 'На этой странице откликов нет.'), buttons)
         except HTTPException:
             reply("Вакансия не найдена. Список: /jobs")
-    elif command in ("/view", "/invite", '/resume', '/evidence', '/ai-review'):
+    elif command in ("/view", "/invite", "/reject", "/reject-confirm", '/resume', '/evidence', '/ai-review'):
         parts = text.split(maxsplit=2)
         row = db.get(Application, parts[1]) if len(parts) >= 2 else None
         try:
             if not row or row.status == "withdrawn":
                 raise HTTPException(404)
             job = owned_job(db, row.job_id, user)
-            if command == "/invite":
+            if command == '/reject':
+                if row.status == 'rejected':
+                    reply('Кандидату уже отправлен отказ.', [('К карточке', '/view ' + row.id)])
+                elif len(parts) > 1 and session.state.get('step') == 'reject_confirm' and session.state.get('application_id') == row.id:
+                    reply('Подтверждение устарело. Откройте карточку кандидата ещё раз.')
+                else:
+                    session.state = {'step': 'reject_confirm', 'application_id': row.id}
+                    reply(f'Отправить кандидату сообщение об отказе по вакансии «{job.title}»?',
+                          [('Отправить отказ', '/reject-confirm ' + row.id), ('Отмена', '/view ' + row.id)], bind=True)
+            elif command == '/reject-confirm':
+                if session.state.get('step') != 'reject_confirm' or session.state.get('application_id') != row.id:
+                    reply('Подтверждение устарело. Откройте карточку кандидата ещё раз.', [('К карточке', '/view ' + row.id)])
+                else:
+                    reject_application(db, row)
+                    session.state = {}
+                    reply('Отказ поставлен в очередь доставки кандидату.', [('К карточке', '/view ' + row.id)], application_id=row.id)
+            elif command == "/invite":
                 if len(parts) < 3 or not 10 <= len(parts[2]) <= 1500:
                     if row.status != 'ready':
                         reply('Приглашение доступно после уточнений; повторно отправлять его не нужно.', [('К карточке', '/view ' + row.id)])
@@ -219,6 +236,8 @@ def handle_employer(db, user, session, text, config, reply):
                     buttons.append(('Ответы на тест', '/test-answers ' + row.id))
                 if row.status == 'ready':
                     buttons.append(('Пригласить', '/invite ' + row.id))
+                if row.status not in ('rejected', 'withdrawn'):
+                    buttons.append(('Отказать', '/reject ' + row.id))
                 buttons.append(('К списку', '/candidates ' + job.id))
                 reply(f"{db.get(User, row.user_id).name} · {job.title}\n{STATUS[row.status]}\n\n{summary}\n\nЭто сведения кандидата, а не проверенная квалификация. Решение принимаете вы.", buttons, application_id=row.id)
         except HTTPException as exc:
@@ -238,6 +257,10 @@ def handle_employer(db, user, session, text, config, reply):
         except HTTPException as exc:
             session.state = {}
             reply(str(exc.detail), [('Мои вакансии', '/jobs')])
+    elif state.get('step') == 'reject_confirm':
+        session.state = {}
+        reply('Отказ не отправлен. Если решение изменилось, откройте карточку кандидата ещё раз.',
+              [('К карточке', '/view ' + state['application_id'])])
     elif state.get("step") == "job_title":
         if not 3 <= len(text) <= 160:
             reply("Название: от 3 до 160 символов.")

@@ -83,4 +83,33 @@ def test_employer_cannot_read_other_company_in_bot(client):
     send(client, 200, "/candidates " + jid, 6)
     with client.app.state.factory() as db:
         assert db.get(Job, jid).active is True
+
+
+def test_recruiter_confirms_rejection_and_candidate_gets_message(client):
+    from test_buttons_delivery import button, click
+    client.app.state.config.employer_code = 'reject-test-code'
+    send(client, 301, '/employer reject-test-code', 'r1')
+    send(client, 301, 'Synthetic company', 'r2')
+    send(client, 301, '/newjob', 'r3')
+    send(client, 301, 'Python engineer', 'r4')
+    send(client, 301, 'Build a Python service with tests and clear documentation.', 'r5')
+    send(client, 301, 'Python', 'r6')
+    send(client, 301, 'Публиковать', 'r7')
+    with client.app.state.factory() as db:
+        jid = db.scalar(select(Job)).id
+    send(client, 302, '/start apply_' + jid, 'r8')
+    send(client, 302, 'Согласен', 'r9')
+    send(client, 302, 'Python engineer with production experience.', 'r10')
+    with client.app.state.factory() as db:
+        aid = db.scalar(select(Application)).id
+    send(client, 301, '/view ' + aid, 'r11')
+    click(client, 301, button(client, 301, '/reject ' + aid), 'r12')
+    with client.app.state.factory() as db:
+        assert db.get(Application, aid).status == 'ready'
+    click(client, 301, button(client, 301, '/reject-confirm ' + aid), 'r13')
+    with client.app.state.factory() as db:
+        assert db.get(Application, aid).status == 'rejected'
+        candidate = db.scalar(select(User).where(User.max_id == '302'))
+        notices = list(db.scalars(select(Outbox).where(Outbox.application_id == aid, Outbox.max_id == candidate.max_id)))
+        assert any('На этот раз' in notice.body['text'] for notice in notices)
         assert all("Вакансия не найдена" in r.body["text"] for r in db.scalars(select(Outbox).where(Outbox.max_id == "200").order_by(Outbox.available_at.desc()).limit(2)))
