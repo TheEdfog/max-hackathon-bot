@@ -12,6 +12,7 @@ import time
 from urllib import error, request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 
 def synthetic_pdf():
