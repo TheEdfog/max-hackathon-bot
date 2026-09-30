@@ -176,14 +176,22 @@ def test_review_configuration_rejects_bot_and_model_credentials():
 
 def test_public_review_api_disables_open_registration(tmp_path):
     from fastapi.testclient import TestClient
-    app = create_app(Config(database_url=f"sqlite:///{tmp_path / 'review.db'}", secret='r' * 40,
-                            production=True, review_mode=True, demo=False, employer_code='review-code',
-                            public_url='https://176.108.244.193', worker=False, bot_token='', ai_enabled=False))
+    config = Config(database_url=f"sqlite:///{tmp_path / 'review.db'}", secret='r' * 40,
+                    production=True, review_mode=True, demo=False, employer_code='review-code',
+                    public_url='https://176.108.244.193', worker=False, bot_token='', ai_enabled=False)
+    app = create_app(config)
+    from hiring.verify_accounts import provision
+    provision(config.database_url, tmp_path / 'review-credentials.json', public_review=True)
     with TestClient(app) as review:
         response = review.post('/api/auth/register', json={
             'email': 'extra@example.com', 'password': 'Strong-test-password-123',
             'name': 'Extra', 'role': 'candidate', 'company': ''})
         assert response.status_code == 403
+        login = review.post('/api/auth/login', json={
+            'email': 'data-api-employer@example.com', 'password': 'TheSwarmReviewEmployer2026!'})
+        headers = {'Authorization': 'Bearer ' + login.json()['token']}
+        assert review.post('/api/company/max-link', headers=headers).status_code == 409
+        assert review.post('/api/company/recruiter-invitations', headers=headers).status_code == 409
 
 
 @pytest.mark.parametrize("resume,answer,state", [

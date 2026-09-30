@@ -350,7 +350,7 @@ def create_app(config=None):
         return {"applications": len(rows), "ready": sum(a.status == "ready" for a in rows), "invited": sum(a.status in ("invited", "confirmed") for a in rows), "confirmed": sum(a.status == "confirmed" for a in rows), "answered_questions": sum(len(a.answers) for a in rows), "demo": user.demo}
 
     from .teams import install_routes as install_company_routes
-    install_company_routes(app, db_session, current, employer)
+    install_company_routes(app, db_session, current, employer, config)
 
     @app.post("/api/max/webhook")
     async def webhook(request: Request):

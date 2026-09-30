@@ -83,7 +83,7 @@ def handle_max_command(db, max_id, display_name, text):
     return True
 
 
-def install_routes(app, db_session, current, employer):
+def install_routes(app, db_session, current, employer, config):
     class InviteView(BaseModel):
         code: str
         command: str
@@ -102,14 +102,20 @@ def install_routes(app, db_session, current, employer):
         return {'code': code, 'command': command, 'expires_at': expires.isoformat(),
                 'notice': 'Одноразовый код показывается только сейчас. Передайте его нужному пользователю MAX.'}
 
+    def require_max_delivery():
+        if config.review_mode:
+            raise HTTPException(409, 'На изолированной API-песочнице нет MAX webhook; проверяйте API по опубликованным тестовым ролям.')
+
     @app.post('/api/company/max-link', response_model=InviteView, tags=['Company'])
     def link_code(admin=Depends(company_admin), db=Depends(db_session)):
+        require_max_delivery()
         if admin.max_id:
             raise HTTPException(409, 'Аккаунт уже связан с MAX')
         return issue(db, admin, 'link', timedelta(minutes=10))
 
     @app.post('/api/company/recruiter-invitations', response_model=InviteView, tags=['Company'])
     def recruiter_invitation(admin=Depends(company_admin), db=Depends(db_session)):
+        require_max_delivery()
         return issue(db, admin, 'recruiter', timedelta(hours=24))
 
     @app.get('/api/company/members', tags=['Company'])
