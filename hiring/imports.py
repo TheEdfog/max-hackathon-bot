@@ -5,8 +5,7 @@ from sqlalchemy import func, or_, select
 from .chat_ui import page_number, queue_message
 from .db import Application, BotSession, ImportTask, Job, Outbox, User, now, serialize_writes
 from .services import submit
-from .sources import (SourceError, import_max_attachment, import_source,
-                      source_kind, validate_max_pdf)
+from .sources import SourceError, import_max_attachment, validate_max_pdf
 from .talent_api import save_pdf
 
 
@@ -46,7 +45,7 @@ def _queue(db, user, session, url, provider='', source_size=0):
         ImportTask.user_id == user.id, ImportTask.created_at > now() - timedelta(hours=1)))
     pending = db.scalar(select(func.count()).select_from(ImportTask).where(ImportTask.status.in_(['pending', 'working', 'ready'])))
     if count >= 5 or pending >= 100:
-        raise SourceError('Лимит импорта: 5 файлов или ссылок в час на пользователя. Вставьте текст вручную или попробуйте позже.')
+        raise SourceError('Лимит импорта: 5 PDF-файлов в час на пользователя. Вставьте текст или попробуйте позже.')
     task = ImportTask(user_id=user.id, job_id=session.state['job_id'], url=url,
                       source_size=source_size, provider=provider,
                       expires_at=now() + timedelta(hours=24))
@@ -56,17 +55,12 @@ def _queue(db, user, session, url, provider='', source_size=0):
     return task
 
 
-def queue_import(db, user, session, url):
-    source_kind(url)  # Reject arbitrary URLs before storing or contacting anything.
-    return _queue(db, user, session, url)
-
-
 def queue_max_attachment(db, user, session, url, filename, size):
     validate_max_pdf(filename, size, url)
     return _queue(db, user, session, url, provider='max_pending', source_size=size)
 
 
-def deliver_import(factory, fetch=import_source, fetch_attachment=import_max_attachment):
+def deliver_import(factory, fetch_attachment=import_max_attachment):
     with factory() as db:
         serialize_writes(db)
         # TTL also applies after restarts, including pending outbox previews.
@@ -86,12 +80,14 @@ def deliver_import(factory, fetch=import_source, fetch_attachment=import_max_att
         db.commit()
     # No open write transaction during untrusted network access / PDF extraction.
     try:
-        result = (fetch_attachment(url, source_size) if provider == 'max_pending' else fetch(url))
+        if provider != 'max_pending':
+            raise SourceError('Импорт по ссылкам отключён. Прикрепите PDF кнопкой MAX.')
+        result = fetch_attachment(url, source_size)
         error = None
     except SourceError as exc:
         result, error = None, str(exc)
     except Exception:
-        result, error = None, 'Источник временно недоступен. Вставьте текст или повторите позже.'
+        result, error = None, 'Не удалось обработать PDF из MAX. Прикрепите файл ещё раз или вставьте текст.'
     with factory() as db:
         serialize_writes(db)
         task = db.get(ImportTask, identifier)
@@ -125,7 +121,7 @@ def handle_import(db, user, session, text, reply, ask_question, after_submit=Non
     task = db.get(ImportTask, identifier) if identifier else None
     if (not task or task.user_id != user.id or task.status != 'ready'
             or session.state.get('import_id') != task.id or task.expires_at.replace(tzinfo=timezone.utc) <= now()):
-        reply('Черновик недоступен или устарел. Откройте вакансию и отправьте ссылку заново.')
+        reply('Черновик недоступен или устарел. Откройте вакансию и отправьте резюме заново.')
         return True
     if editing:
         value = text.strip()

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "РезюмИТ Найм",
-    "version": "1.7.2"
+    "version": "1.7.3"
   },
   "paths": {
     "/health": {
@@ -1689,52 +1689,6 @@
         ]
       }
     },
-    "/api/integrations/v1/sources/preview": {
-      "post": {
-        "tags": [
-          "HR integration v1"
-        ],
-        "summary": "Preview",
-        "operationId": "preview_api_integrations_v1_sources_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SourceBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SourcePreview"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "IntegrationKey": []
-          }
-        ]
-      }
-    },
     "/api/integrations/v1/documents/parse": {
       "post": {
         "tags": [
@@ -3241,51 +3195,6 @@
           "label"
         ],
         "title": "Requirement"
-      },
-      "SourceBody": {
-        "properties": {
-          "url": {
-            "type": "string",
-            "maxLength": 2048,
-            "minLength": 10,
-            "title": "Url"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "url"
-        ],
-        "title": "SourceBody"
-      },
-      "SourcePreview": {
-        "properties": {
-          "text": {
-            "type": "string",
-            "title": "Text"
-          },
-          "provider": {
-            "type": "string",
-            "title": "Provider"
-          },
-          "warning": {
-            "type": "string",
-            "title": "Warning"
-          },
-          "stored": {
-            "type": "boolean",
-            "const": false,
-            "title": "Stored"
-          }
-        },
-        "type": "object",
-        "required": [
-          "text",
-          "provider",
-          "warning",
-          "stored"
-        ],
-        "title": "SourcePreview"
       },
       "TestAttachment": {
         "properties": {

@@ -3,7 +3,6 @@ import importlib.util
 import pytest
 from hiring.config import Config
 from hiring.matching import evidence, questions
-from hiring.sources import SourceError, import_source
 from test_product import client, register
 from test_integrations import key, PREFIX
 
@@ -30,17 +29,6 @@ def test_obsolete_write_scope_rejected(client):
     response = client.post('/api/integration-keys', headers=owner,
         json={'name': 'obsolete', 'scopes': ['applications:read', 'applications:pii', 'applications:write']})
     assert response.status_code == 422
-
-
-@pytest.mark.parametrize('url', ['https://github.com/TheEdfog',
-    'https://drive.google.com/file/d/synthetic/view', 'https://cloud.mail.ru/public/a/b'])
-def test_retired_sources_do_not_contact_network(url):
-    class Reader:
-        def json(self, *args, **kwargs):
-            pytest.fail('Retired source must not be fetched')
-        get = json
-    with pytest.raises(SourceError):
-        import_source(url, Reader())
 
 
 def test_three_states_without_scores_or_transitive_inference():
