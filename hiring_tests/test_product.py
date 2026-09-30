@@ -162,6 +162,30 @@ def test_production_configuration_fails_closed():
         Config(production=True, secret="", employer_code="", public_url="http://localhost").validate()
 
 
+def test_review_configuration_rejects_bot_and_model_credentials():
+    safe = Config(database_url='sqlite:////app/data/hiring.db', secret='r' * 40,
+                  production=True, review_mode=True, demo=False, employer_code='review-code',
+                  public_url='https://176.108.244.193', worker=False, bot_token='', ai_enabled=False)
+    safe.validate()
+    unsafe = Config(database_url=safe.database_url, secret=safe.secret, production=True,
+                    review_mode=True, demo=False, employer_code='review-code',
+                    public_url=safe.public_url, worker=False, bot_token='should-not-exist')
+    with pytest.raises(ValueError):
+        unsafe.validate()
+
+
+def test_public_review_api_disables_open_registration(tmp_path):
+    from fastapi.testclient import TestClient
+    app = create_app(Config(database_url=f"sqlite:///{tmp_path / 'review.db'}", secret='r' * 40,
+                            production=True, review_mode=True, demo=False, employer_code='review-code',
+                            public_url='https://176.108.244.193', worker=False, bot_token='', ai_enabled=False))
+    with TestClient(app) as review:
+        response = review.post('/api/auth/register', json={
+            'email': 'extra@example.com', 'password': 'Strong-test-password-123',
+            'name': 'Extra', 'role': 'candidate', 'company': ''})
+        assert response.status_code == 403
+
+
 @pytest.mark.parametrize("resume,answer,state", [
     ("Python использовал в проекте", "", "mentioned"),
     ("Не работал с Python", "", "review"),
