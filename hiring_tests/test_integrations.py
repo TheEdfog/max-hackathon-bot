@@ -2,7 +2,7 @@ from datetime import timedelta
 import json
 import pytest
 from sqlalchemy import func, select
-from hiring.db import Application, IntegrationEvent, IntegrationKey, Job, now
+from hiring.db import Application, IntegrationEvent, IntegrationKey, Job, User, now
 from test_product import client, register, job
 from test_employer_bot import send
 from test_buttons_delivery import click, button
@@ -88,6 +88,37 @@ def test_company_isolation_pii_and_withdrawal_tombstone(client):
     assert resume not in json.dumps(feed) and 'Private synthetic name' not in json.dumps(feed)
     assert client.get(PREFIX + '/events', params={'after': feed['next_cursor']}, headers=full).json()['items'] == []
     assert client.get(PREFIX + '/applications', headers=reader).json()['items'] == [tombstone]
+
+
+def test_rejection_decision_scope_message_and_vacancy_close(client):
+    owner, candidate = register(client, 'decision-owner', 'employer'), register(client, 'decision-candidate')
+    with client.app.state.factory() as db:
+        person = db.scalar(select(User).where(User.email == 'decision-candidate@example.com'))
+        person.max_id = '909'
+        db.commit()
+    no_decision, _ = key(client, owner, ['applications:read'])
+    decision, _ = key(client, owner, ['applications:decision', 'jobs:write'])
+    jid = client.put(PREFIX + '/jobs/by-external/ats/reject-test', headers=decision, json=vacancy()).json()['id']
+    submission = client.post('/api/jobs/' + jid + '/apply', headers=candidate, json={
+        'name': 'Synthetic candidate', 'resume': 'Python and PostgreSQL engineer with experience building and maintaining production data services.', 'consent': True})
+    assert submission.status_code == 201, submission.text
+    submitted = submission.json()
+    aid = submitted['id']
+    assert client.post(PREFIX + '/applications/' + aid + '/reject', headers=no_decision).status_code == 403
+    result = client.post(PREFIX + '/applications/' + aid + '/reject', headers=decision)
+    assert result.status_code == 200 and result.json() == {'id': aid, 'status': 'rejected', 'delivery': 'queued'}
+    assert client.post(PREFIX + '/applications/' + aid + '/reject', headers=decision).json()['status'] == 'rejected'
+    assert client.patch(PREFIX + '/jobs/' + jid, headers=decision, json={'active': False}).json()['active'] is False
+    another = register(client, 'closed-job-candidate')
+    assert client.post('/api/jobs/' + jid + '/apply', headers=another, json={
+        'name': 'Synthetic candidate', 'resume': 'Python engineer with experience building reliable production applications and writing automated tests.', 'consent': True}).status_code == 409
+    with client.app.state.factory() as db:
+        from hiring.db import Outbox
+        assert db.get(Application, aid).status == 'rejected'
+        notices = list(db.scalars(select(Outbox).where(Outbox.application_id == aid, Outbox.max_id == '909')))
+        assert len(notices) == 1 and 'не готовы продолжить' in notices[0].body['text']
+        event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.resource_id == aid).order_by(IntegrationEvent.seq.desc()))
+        assert event.kind == 'application.rejected'
 
 
 @pytest.mark.parametrize('cursor', ['-1', '+1', '01', ' 1', '١', '1.0', '9223372036854775808'])

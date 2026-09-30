@@ -11,9 +11,9 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from .db import Application, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
-from .services import application_view, invite, owned_job
+from .services import application_view, invite, owned_job, reject_application
 
-Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
+Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'applications:decision', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
 READ_SCOPES = ['jobs:read', 'applications:read', 'events:read', 'metrics:read']
 T = TypeVar('T')
 
@@ -295,7 +295,7 @@ def install_routes(app, config, db_session, employer, job_view):
 
     @router.get('/applications', response_model=Page[AppSummary | Tombstone])
     def list_applications(request: Request, job_id: str | None = None,
-                          status: Literal['clarifying', 'ready', 'invited', 'confirmed', 'withdrawn'] | None = None,
+                          status: Literal['clarifying', 'ready', 'invited', 'confirmed', 'rejected', 'withdrawn'] | None = None,
                           created_from: datetime | None = None, created_before: datetime | None = None,
                           after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'),
                           limit: int = Query(50, ge=1, le=100),
@@ -339,6 +339,14 @@ def install_routes(app, config, db_session, employer, job_view):
         serialize_writes(db)
         row = owned_application(db, app_id, identity[1])
         invite(db, row, body.message)
+        db.commit()
+        return {'id': row.id, 'status': row.status, 'delivery': 'queued' if db.get(User, row.user_id).max_id else 'no_max_link'}
+
+    @router.post('/applications/{app_id}/reject', response_model=InvitationResult)
+    def reject_candidate(app_id: str, identity=Depends(require('applications:decision')), db=Depends(db_session)):
+        serialize_writes(db)
+        row = owned_application(db, app_id, identity[1])
+        reject_application(db, row)
         db.commit()
         return {'id': row.id, 'status': row.status, 'delivery': 'queued' if db.get(User, row.user_id).max_id else 'no_max_link'}
 

@@ -1387,6 +1387,7 @@
                     "ready",
                     "invited",
                     "confirmed",
+                    "rejected",
                     "withdrawn"
                   ],
                   "type": "string"
@@ -1577,6 +1578,53 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/integrations/v1/applications/{app_id}/reject": {
+      "post": {
+        "tags": [
+          "HR integration v1"
+        ],
+        "summary": "Reject Candidate",
+        "operationId": "reject_candidate_api_integrations_v1_applications__app_id__reject_post",
+        "security": [
+          {
+            "IntegrationKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2810,6 +2858,7 @@
                 "jobs:write",
                 "applications:read",
                 "applications:pii",
+                "applications:decision",
                 "invitations:write",
                 "events:read",
                 "metrics:read",
@@ -2855,6 +2904,7 @@
                 "jobs:write",
                 "applications:read",
                 "applications:pii",
+                "applications:decision",
                 "invitations:write",
                 "events:read",
                 "metrics:read",
@@ -2909,6 +2959,7 @@
                 "jobs:write",
                 "applications:read",
                 "applications:pii",
+                "applications:decision",
                 "invitations:write",
                 "events:read",
                 "metrics:read",

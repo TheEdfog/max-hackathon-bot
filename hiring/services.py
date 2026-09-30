@@ -102,6 +102,22 @@ def invite(db, app, message):
     return app
 
 
+def reject_application(db, app):
+    """Record a recruiter decision and queue one neutral notice to the candidate."""
+    if app.status == 'rejected':
+        return app
+    if app.status == 'withdrawn':
+        raise HTTPException(409, 'Отклик отозван кандидатом')
+    app.status = 'rejected'
+    db.add(Audit(application_id=app.id, action='rejected'))
+    job = db.get(Job, app.job_id)
+    notify(db, db.get(User, app.user_id),
+           f'Спасибо за интерес к вакансии «{job.title}» в {job.company}. '
+           'На этот раз мы не готовы продолжить процесс. Желаем успехов в поиске работы.',
+           app.id, [('Мои отклики', '/status')])
+    return app
+
+
 def confirm(db, app):
     if app.status == "confirmed":
         return app

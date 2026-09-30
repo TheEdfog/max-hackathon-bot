@@ -260,7 +260,8 @@ def _collect_integration_changes(db, _flush_context, _instances):
                 continue  # The FK constraint rejects an invalid application.
             owner = job.owner_id
             kind = 'application.created' if fresh else (
-                'application.withdrawn' if row.status == 'withdrawn' else 'application.updated')
+                'application.withdrawn' if row.status == 'withdrawn' else
+                'application.rejected' if row.status == 'rejected' else 'application.updated')
         db.add(IntegrationEvent(owner_id=owner, kind=kind, resource_id=row.id))
 
 

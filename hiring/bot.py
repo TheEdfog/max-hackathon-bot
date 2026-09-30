@@ -15,7 +15,7 @@ from .sandbox import PERSONAS, actor
 from .pdf_extract import MAX_BYTES
 
 STATUS = {'clarifying': 'ждём уточнений', 'ready': 'у работодателя', 'invited': 'приглашение',
-          'confirmed': 'интерес подтверждён', 'withdrawn': 'отозван'}
+          'confirmed': 'интерес подтверждён', 'rejected': 'отказ работодателя', 'withdrawn': 'отозван'}
 
 
 def valid_event(event):
@@ -209,7 +209,7 @@ def handle_update(db, event, config):
         else:
             reply('РезюмИТ Найм · помощник первичного отбора\nКандидату: откройте ссылку вакансии от работодателя.\nРаботодателю: войдите по коду.\nТестовая версия - используйте вымышленные сведения.', [('Я работодатель', '/employer'), ('Мои отклики', '/status'), ('Учебный сценарий', '/demo'), ('Обработка данных', '/privacy'), ('Отмена шага', '/cancel')])
         return
-    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/resume', '/evidence', '/ai-review', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/ai-withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers', '/ai-consent'}
+    known_commands = {'/employer', '/newjob', '/jobs', '/job', '/candidates', '/close', '/open', '/view', '/invite', '/reject', '/reject-confirm', '/resume', '/evidence', '/ai-review', '/metrics', '/start', '/status', '/application', '/confirm', '/withdraw', '/ai-withdraw', '/continue', '/screening', '/screening-on', '/screening-off', '/screening-answers', '/ai-consent'}
     known_commands.update({'/tests', '/test-template', '/newtest', '/archive-test', '/job-test', '/use-test', '/test-answers'})
     known_commands.update({'/import-preview', '/import-confirm', '/import-edit', '/import-add'})
     if command.startswith('/') and command not in known_commands:
