@@ -10,6 +10,7 @@ from .assessments import TestBody, attach_test, create_test, owned_test, test_vi
 from .db import AssessmentTemplate, ResumeDocument, serialize_writes
 from .pdf_extract import MAX_BYTES, extract_pdf
 from .services import owned_job
+from .teams import company_member_ids
 
 class ParsedDocument(BaseModel):
     text: str
@@ -102,7 +103,8 @@ def install_talent_routes(router, require, db_session, owned_application):
     @router.get('/tests', response_model=TestPage)
     def tests(after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'), limit: int = Query(50, ge=1, le=100),
               identity=Depends(require('tests:read')), db=Depends(db_session)):
-        query = select(AssessmentTemplate).where(AssessmentTemplate.owner_id == identity[1].id)
+        query = select(AssessmentTemplate).where(
+            AssessmentTemplate.owner_id.in_(company_member_ids(db, identity[1])))
         if after:
             query = query.where(AssessmentTemplate.id > after)
         rows = list(db.scalars(query.order_by(AssessmentTemplate.id).limit(limit + 1)))

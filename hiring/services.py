@@ -5,6 +5,7 @@ from .chat_ui import queue_message
 from .matching import NORMALIZATION_VERSION, evidence, normalize_resume, questions, resume_digest
 from .sandbox import destination
 from .screening import recent_timeline_question, screening_questions
+from .teams import company_member_ids
 
 
 def notify(db, user, text, application_id=None, buttons=None):
@@ -14,7 +15,7 @@ def notify(db, user, text, application_id=None, buttons=None):
 
 def owned_job(db, job_id, user):
     job = db.get(Job, job_id)
-    if not job or job.owner_id != user.id:
+    if not job or job.owner_id not in company_member_ids(db, user):
         raise HTTPException(404, "Вакансия не найдена")
     return job
 

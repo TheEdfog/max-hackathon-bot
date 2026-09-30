@@ -36,6 +36,23 @@ def test_additive_migration_preserves_legacy_rows(tmp_path):
     engine.dispose()
 
 
+def test_company_migration_keeps_legacy_employers_private(tmp_path):
+    path = tmp_path / 'legacy-employers.db'
+    with sqlite3.connect(path) as db:
+        db.execute('CREATE TABLE hiring_users (id VARCHAR(32) PRIMARY KEY, email VARCHAR(254), max_id VARCHAR(40), name VARCHAR(160) NOT NULL, role VARCHAR(20) NOT NULL, company VARCHAR(160) NOT NULL, password TEXT NOT NULL, demo BOOLEAN NOT NULL DEFAULT 0)')
+        db.executemany('INSERT INTO hiring_users (id,email,name,role,company,password) VALUES (?,?,?,?,?,?)', [
+            ('old-admin-1', 'first@example.com', 'First', 'employer', 'Same displayed name', ''),
+            ('old-admin-2', 'second@example.com', 'Second', 'employer', 'Same displayed name', ''),
+        ])
+    engine, factory = connect('sqlite:///' + str(path))
+    with factory() as db:
+        users = list(db.scalars(select(User).order_by(User.email)))
+        assert len(users) == 2
+        assert all(user.company_role == 'admin' and user.company_id for user in users)
+        assert users[0].company_id != users[1].company_id
+    engine.dispose()
+
+
 def test_backup_restore_and_no_overwrite(tmp_path):
     path, destination = tmp_path / 'source.db', tmp_path / 'backup.db'
     with sqlite3.connect(path) as db:

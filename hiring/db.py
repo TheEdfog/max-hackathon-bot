@@ -27,8 +27,30 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(160))
     role: Mapped[str] = mapped_column(String(20), default="candidate")
     company: Mapped[str] = mapped_column(String(160), default="")
+    company_id: Mapped[str | None] = mapped_column(ForeignKey('hiring_companies.id'))
+    company_role: Mapped[str] = mapped_column(String(20), default='')
     password: Mapped[str] = mapped_column(Text, default="")
     demo: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Company(Base):
+    __tablename__ = 'hiring_companies'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    name: Mapped[str] = mapped_column(String(160))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class CompanyInvite(Base):
+    __tablename__ = 'hiring_company_invites'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    company_id: Mapped[str] = mapped_column(ForeignKey('hiring_companies.id'), index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey('hiring_users.id'), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(ForeignKey('hiring_users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Job(Base):
@@ -284,6 +306,19 @@ def connect(url):
     ai_columns = {c['name'] for c in inspect(engine).get_columns('hiring_ai_reviews')}
     import_columns = {c['name'] for c in inspect(engine).get_columns('hiring_import_tasks')}
     with engine.begin() as connection:
+        user_columns = {c['name'] for c in inspect(engine).get_columns('hiring_users')}
+        if 'company_id' not in user_columns:
+            connection.execute(text('ALTER TABLE hiring_users ADD COLUMN company_id VARCHAR(32) REFERENCES hiring_companies(id)'))
+        if 'company_role' not in user_columns:
+            connection.execute(text("ALTER TABLE hiring_users ADD COLUMN company_role VARCHAR(20) NOT NULL DEFAULT ''"))
+        # Existing employers remain isolated: each becomes admin of its own company.
+        for user_id, company_name in connection.execute(text(
+                "SELECT id, company FROM hiring_users WHERE role='employer' AND company_id IS NULL")).all():
+            company_id = uid()
+            connection.execute(text('INSERT INTO hiring_companies (id, name, created_at) VALUES (:id, :name, :created)'),
+                               {'id': company_id, 'name': company_name or 'Компания', 'created': now()})
+            connection.execute(text("UPDATE hiring_users SET company_id=:company_id, company_role='admin' WHERE id=:id"),
+                               {'company_id': company_id, 'id': user_id})
         application_columns = {c['name'] for c in inspect(engine).get_columns('hiring_applications')}
         missing_normalization = 'normalized_skills' not in application_columns
         missing_resume_hash = 'resume_sha256' not in application_columns
@@ -321,6 +356,10 @@ def connect(url):
             connection.execute(text("ALTER TABLE hiring_jobs ADD COLUMN test_questions JSON NOT NULL DEFAULT '[]'"))
         if 'expires_at' not in ai_columns:
             connection.execute(text('ALTER TABLE hiring_ai_reviews ADD COLUMN expires_at DATETIME'))
+    user_indexes = {index['name'] for index in inspect(engine).get_indexes('hiring_users')}
+    if 'ix_hiring_users_company_id' not in user_indexes:
+        with engine.begin() as connection:
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_hiring_users_company_id ON hiring_users(company_id)'))
     application_indexes = {index['name'] for index in inspect(engine).get_indexes('hiring_applications')}
     if 'ix_hiring_applications_user_resume' not in application_indexes:
         resume_index = next(index for index in Application.__table__.indexes

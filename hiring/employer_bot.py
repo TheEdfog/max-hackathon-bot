@@ -9,6 +9,8 @@ from .chat_ui import PAGE_SIZE, page_number
 from .matching import evidence, extract
 from .services import invite, owned_job, reject_application
 from .screening import PRESETS
+from .teams import company_member_ids
+from .teams import create_company
 
 STATUS = {"clarifying": "уточняет опыт", "ready": "готов к просмотру", "invited": "приглашён", "confirmed": "подтвердил интерес", "rejected": "отказ работодателя", "withdrawn": "отозван"}
 EVIDENCE = {'mentioned': 'есть упоминание', 'review': 'нужно уточнить',
@@ -58,12 +60,22 @@ def handle_employer(db, user, session, text, config, reply):
         if not 2 <= len(text) <= 160 or text.startswith("/"):
             reply("Нужно название компании от 2 до 160 символов. /cancel - отмена.")
         else:
-            user.role, user.company = "employer", text
+            user.role = 'employer'
+            create_company(db, user, text)
             session.state = {}
-            reply(f"Готово, {user.company}! Решения по кандидатам принимаете вы, бот лишь собирает сведения.", [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs')])
+            reply(f"Готово, {user.company}! Вы администратор компании. Решения по кандидатам принимаете вы, бот лишь собирает сведения.", [('Новая вакансия', '/newjob'), ('Мои вакансии', '/jobs'), ('Пригласить рекрутера', '/team-invite')])
         return True
     if user.role != "employer":
         return False
+    if command == '/team-invite':
+        if user.company_role != 'admin':
+            reply('Код приглашения может создать только администратор компании.')
+        else:
+            from .teams import issue_max_code
+            code, expires = issue_max_code(db, user, 'recruiter', timedelta(hours=24))
+            db.flush()
+            reply(f'Приглашение действительно до {expires.astimezone().strftime("%d.%m %H:%M")} по местному времени. Передайте команду рекрутеру лично:\n/join {code}\n\nКод одноразовый; не публикуйте его в общем канале.')
+        return True
     from .assessment_bot import handle_tests
     if handle_tests(db, user, session, text, reply):
         return True
@@ -86,7 +98,7 @@ def handle_employer(db, user, session, text, config, reply):
     elif command == '/screening-answers':
         parts = text.split()
         row = db.get(Application, parts[1]) if len(parts) > 1 else None
-        if not row or row.status == 'withdrawn' or db.get(Job, row.job_id).owner_id != user.id:
+        if not row or row.status == 'withdrawn' or db.get(Job, row.job_id).owner_id not in company_member_ids(db, user):
             reply('Отклик не найден.')
         else:
             items = [q for q in row.questions if q.get('kind') == 'screening']
@@ -102,14 +114,15 @@ def handle_employer(db, user, session, text, config, reply):
         session.state = {"step": "job_title"}
         reply("Создадим вакансию. Как называется должность? Например: Junior Python-разработчик.\n/cancel - отмена.")
     elif command == '/metrics':
+        member_ids = company_member_ids(db, user)
         counts = dict(db.execute(select(Application.status, func.count()).join(Job).where(
-            Job.owner_id == user.id, Application.status != 'withdrawn').group_by(Application.status)).all())
-        jobs = db.scalar(select(func.count()).select_from(Job).where(Job.owner_id == user.id, Job.active == True))
+            Job.owner_id.in_(member_ids), Application.status != 'withdrawn').group_by(Application.status)).all())
+        jobs = db.scalar(select(func.count()).select_from(Job).where(Job.owner_id.in_(member_ids), Job.active == True))
         reply(f"Сводка · {user.company}\n\nОткрытых вакансий: {jobs}\nОткликов: {sum(counts.values())}\nУточняют сведения: {counts.get('clarifying', 0)}\nЖдут вашего решения: {counts.get('ready', 0)}\nПриглашены, ждём ответа: {counts.get('invited', 0)}\nПодтвердили интерес: {counts.get('confirmed', 0)}\nОтказано: {counts.get('rejected', 0)}\n\nЭто фактические статусы, не оценка качества кандидатов. Отозванные отклики не учитываются.",
               [('Мои вакансии', '/jobs'), ('Новая вакансия', '/newjob'), ('Меню', '/help')])
     elif command == "/jobs":
         page = page_number(text.partition(' ')[2])
-        rows = list(db.scalars(select(Job).where(Job.owner_id == user.id).order_by(Job.created_at.desc(), Job.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
+        rows = list(db.scalars(select(Job).where(Job.owner_id.in_(company_member_ids(db, user))).order_by(Job.created_at.desc(), Job.id).offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1)))
         if not rows:
             reply("Здесь пока нет вакансий.", [('Новая вакансия', '/newjob'), ('В начало списка', '/jobs')])
         else:

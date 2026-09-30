@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from .db import Application, ExternalJob, IntegrationEvent, IntegrationKey, Job, User, now, serialize_writes, uid
 from .services import application_view, invite, owned_job, reject_application
+from .teams import company_member_ids
 
 Scope = Literal['jobs:read', 'jobs:write', 'applications:read', 'applications:pii', 'applications:decision', 'invitations:write', 'events:read', 'metrics:read', 'tests:read', 'tests:write']
 READ_SCOPES = ['jobs:read', 'applications:read', 'events:read', 'metrics:read']
@@ -149,7 +150,8 @@ def issue_key(db, owner, body):
     if owner.role != 'employer' or owner.demo:
         raise HTTPException(403, 'Ключи доступны только обычному работодателю')
     count = db.scalar(select(func.count()).select_from(IntegrationKey).where(
-        IntegrationKey.owner_id == owner.id, IntegrationKey.revoked == False, IntegrationKey.expires_at > now()))
+        IntegrationKey.owner_id.in_(company_member_ids(db, owner)), IntegrationKey.revoked == False,
+        IntegrationKey.expires_at > now()))
     if count >= 20:
         raise HTTPException(409, 'Отзовите неиспользуемые ключи: максимум 20 активных')
     identifier = uid()
@@ -183,13 +185,14 @@ def install_routes(app, config, db_session, employer, job_view):
 
     @app.get('/api/integration-keys', response_model=list[KeyInfo], tags=['Integration keys'])
     def list_keys(owner=Depends(employer), db=Depends(db_session)):
-        return [key_view(row) for row in db.scalars(select(IntegrationKey).where(IntegrationKey.owner_id == owner.id))]
+        return [key_view(row) for row in db.scalars(select(IntegrationKey).where(
+            IntegrationKey.owner_id.in_(company_member_ids(db, owner))))]
 
     @app.delete('/api/integration-keys/{key_id}', status_code=204, tags=['Integration keys'])
     def revoke_key(key_id: str, owner=Depends(employer), db=Depends(db_session)):
         serialize_writes(db)
         row = db.get(IntegrationKey, key_id)
-        if not row or row.owner_id != owner.id:
+        if not row or row.owner_id not in company_member_ids(db, owner):
             raise HTTPException(404, 'Ключ не найден')
         row.revoked = True
         db.commit()
@@ -236,9 +239,10 @@ def install_routes(app, config, db_session, employer, job_view):
     def list_jobs(active: bool | None = None, after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'),
                   source: str | None = Query(None, pattern=r'^[a-zA-Z0-9_-]{1,40}$'),
                   limit: int = Query(50, ge=1, le=100), identity=Depends(require('jobs:read')), db=Depends(db_session)):
-        query = select(Job).where(Job.owner_id == identity[1].id)
+        member_ids = company_member_ids(db, identity[1])
+        query = select(Job).where(Job.owner_id.in_(member_ids))
         if source:
-            query = query.join(ExternalJob).where(ExternalJob.source == source, ExternalJob.owner_id == identity[1].id)
+            query = query.join(ExternalJob).where(ExternalJob.source == source, ExternalJob.owner_id.in_(member_ids))
         if active is not None:
             query = query.where(Job.active == active)
         if after:
@@ -255,7 +259,7 @@ def install_routes(app, config, db_session, employer, job_view):
     def get_external_job(source: str = Path(pattern=r'^[a-zA-Z0-9_-]{1,40}$'),
                          external_id: str = Path(pattern=r'^[a-zA-Z0-9_.-]{1,120}$'),
                          identity=Depends(require('jobs:read')), db=Depends(db_session)):
-        mapping = db.scalar(select(ExternalJob).where(ExternalJob.owner_id == identity[1].id,
+        mapping = db.scalar(select(ExternalJob).where(ExternalJob.owner_id.in_(company_member_ids(db, identity[1])),
                             ExternalJob.source == source, ExternalJob.external_id == external_id))
         if not mapping:
             raise HTTPException(404, 'Вакансия не найдена')
@@ -267,7 +271,7 @@ def install_routes(app, config, db_session, employer, job_view):
                 identity=Depends(require('jobs:write')), db=Depends(db_session)):
         serialize_writes(db)
         owner = identity[1]
-        mapping = db.scalar(select(ExternalJob).where(ExternalJob.owner_id == owner.id,
+        mapping = db.scalar(select(ExternalJob).where(ExternalJob.owner_id.in_(company_member_ids(db, owner)),
                             ExternalJob.source == source, ExternalJob.external_id == external_id))
         values = body.model_dump()
         if mapping:
@@ -300,7 +304,7 @@ def install_routes(app, config, db_session, employer, job_view):
                           after: str | None = Query(None, pattern=r'^[0-9a-f]{32}$'),
                           limit: int = Query(50, ge=1, le=100),
                           identity=Depends(require('applications:read')), db=Depends(db_session)):
-        query = select(Application).join(Job).where(Job.owner_id == identity[1].id)
+        query = select(Application).join(Job).where(Job.owner_id.in_(company_member_ids(db, identity[1])))
         if 'review_stage' in request.query_params:
             raise HTTPException(410, 'Фильтр внутренних HR-этапов удалён. Используйте status.')
         for value in (created_from, created_before):
@@ -324,7 +328,8 @@ def install_routes(app, config, db_session, employer, job_view):
                 'next_cursor': rows[limit - 1].id if len(rows) > limit else None}
 
     def owned_application(db, app_id, owner):
-        row = db.scalar(select(Application).join(Job).where(Application.id == app_id, Job.owner_id == owner.id))
+        row = db.scalar(select(Application).join(Job).where(
+            Application.id == app_id, Job.owner_id.in_(company_member_ids(db, owner))))
         if not row:
             raise HTTPException(404, 'Отклик не найден')
         return row
@@ -356,7 +361,7 @@ def install_routes(app, config, db_session, employer, job_view):
         cursor = int(after)
         if cursor > 2**63 - 1:
             raise HTTPException(422, 'Cursor exceeds signed 64-bit range')
-        rows = list(db.scalars(select(IntegrationEvent).where(IntegrationEvent.owner_id == identity[1].id,
+        rows = list(db.scalars(select(IntegrationEvent).where(IntegrationEvent.owner_id.in_(company_member_ids(db, identity[1])),
                           IntegrationEvent.seq > cursor).order_by(IntegrationEvent.seq).limit(limit + 1)))
         items = rows[:limit]
         return {'items': [{'seq': e.seq, 'type': e.kind, 'resource_id': e.resource_id, 'at': e.created_at} for e in items],
@@ -365,8 +370,9 @@ def install_routes(app, config, db_session, employer, job_view):
     @router.get('/metrics', response_model=Metrics)
     def metrics(identity=Depends(require('metrics:read')), db=Depends(db_session)):
         counts = dict(db.execute(select(Application.status, func.count()).join(Job).where(
-            Job.owner_id == identity[1].id).group_by(Application.status)).all())
-        return {'active_jobs': db.scalar(select(func.count()).select_from(Job).where(Job.owner_id == identity[1].id, Job.active == True)),
+            Job.owner_id.in_(company_member_ids(db, identity[1]))).group_by(Application.status)).all())
+        return {'active_jobs': db.scalar(select(func.count()).select_from(Job).where(
+                    Job.owner_id.in_(company_member_ids(db, identity[1])), Job.active == True)),
                 'applications': sum(n for status, n in counts.items() if status != 'withdrawn'), 'statuses': counts,
                 'notice': 'Фактические статусы, не рейтинг кандидатов'}
 

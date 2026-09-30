@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from .db import Application, AssessmentTemplate
+from .teams import company_member_ids
 
 
 class TestQuestion(BaseModel):
@@ -37,13 +38,14 @@ class TestBody(BaseModel):
 
 def owned_test(db, test_id, owner):
     row = db.get(AssessmentTemplate, test_id)
-    if not row or row.owner_id != owner.id:
+    if not row or row.owner_id not in company_member_ids(db, owner):
         raise HTTPException(404, 'Тест не найден')
     return row
 
 
 def create_test(db, owner, body):
-    count = db.scalar(select(func.count()).select_from(AssessmentTemplate).where(AssessmentTemplate.owner_id == owner.id))
+    count = db.scalar(select(func.count()).select_from(AssessmentTemplate).where(
+        AssessmentTemplate.owner_id.in_(company_member_ids(db, owner))))
     if count >= 100:
         raise HTTPException(409, 'Лимит библиотеки: 100 шаблонов')
     row = AssessmentTemplate(owner_id=owner.id, **body.model_dump())
