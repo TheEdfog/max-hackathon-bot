@@ -12,6 +12,7 @@ from .demo_bot import handle_demo
 from .outbox import start_worker
 from .services import answer, confirm, submit, withdraw_application
 from .sandbox import PERSONAS, actor
+from .pdf_extract import MAX_BYTES
 
 STATUS = {'clarifying': 'ждём уточнений', 'ready': 'у работодателя', 'invited': 'приглашение',
           'confirmed': 'интерес подтверждён', 'withdrawn': 'отозван'}
@@ -36,18 +37,34 @@ def valid_event(event):
     content = body.get('text') or ''
     if not isinstance(content, str) or len(content) > 20000:
         return None
+    attachment = None
+    attachments = body.get('attachments')
+    if attachments is not None:
+        if not isinstance(attachments, list) or len(attachments) != 1 or not isinstance(attachments[0], dict):
+            attachment = {'kind': 'unsupported'}
+        else:
+            file = attachments[0]
+            payload = file.get('payload') or {}
+            filename, size, url = file.get('filename'), file.get('size'), payload.get('url') if isinstance(payload, dict) else None
+            valid_filename = (file.get('type') == 'file' and isinstance(filename, str)
+                              and len(filename) <= 255 and filename.lower().endswith('.pdf')
+                              and not any(ord(char) < 32 for char in filename))
+            valid_size = isinstance(size, int) and not isinstance(size, bool) and 1 <= size <= MAX_BYTES
+            valid_url = isinstance(url, str) and len(url) <= 2048
+            attachment = ({'kind': 'pdf', 'filename': filename, 'size': size, 'url': url}
+                          if valid_filename and valid_size and valid_url else {'kind': 'unsupported'})
     key = (body.get('mid') if kind == 'message_created' else callback.get('callback_id')) if kind != 'bot_started' else json.dumps([event.get('timestamp'), event.get('payload')], ensure_ascii=False)
     if not isinstance(key, str) or not 1 <= len(key) <= 256:
         return None
     digest = hashlib.sha256(f'{kind}:{uid}:{key}'.encode()).hexdigest()
-    return kind, identity, str(uid), content.strip(), callback, digest
+    return kind, identity, str(uid), content.strip(), callback, digest, attachment
 
 
 def handle_update(db, event, config):
     parsed = valid_event(event)
     if not parsed:
         return
-    kind, identity, max_id, text, callback, digest = parsed
+    kind, identity, max_id, text, callback, digest, attachment = parsed
     if config.sandbox and max_id not in config.sandbox_users:
         return
     if db.get(BotEvent, digest):
@@ -354,18 +371,24 @@ def handle_update(db, event, config):
             reply('Для отправки отклика нужно согласие.', [('Согласен, продолжить', 'Согласен'), ('Отмена', '/cancel')], bind=True)
         else:
             session.state = {**state, 'step': 'resume'}
-            reply('Пришлите текст резюме (40-20 000 символов) или публичную ссылку на текстовый PDF в Яндекс Диске. Распознанный текст сначала покажем для проверки. Сканы и закрытые файлы не поддерживаются. Не включайте паспортные данные.')
+            reply('Отправьте текст резюме или прикрепите PDF-файл кнопкой со скрепкой (до 5 МБ). Ссылки на файлы не поддерживаются. Текст покажем для проверки; отклик отправится только после подтверждения. Сканы не читаются. Не включайте паспортные данные.')
     elif state.get('step') == 'resume':
-        if text.startswith(('https://', 'http://')) and '\n' not in text and ' ' not in text:
-            from .imports import queue_import
+        if attachment:
+            if attachment['kind'] != 'pdf':
+                reply('Пришлите один PDF-файл до 5 МБ. Поддерживается текстовый PDF до 10 страниц; сканы и другие форматы пока не читаются.')
+                return
+            from .imports import queue_max_attachment
             from .sources import SourceError
             try:
-                queue_import(db, user, session, text)
-                reply('Читаю публичный источник. Затем покажу текст для проверки.', [('Отмена', '/cancel')])
+                queue_max_attachment(db, user, session, attachment['url'],
+                                     attachment['filename'], attachment['size'])
+                reply('Получил PDF. Проверю файл и покажу распознанный текст. Отклик не будет отправлен без вашего подтверждения.', [('Отмена', '/cancel')])
             except SourceError as exc:
                 reply(str(exc))
+        elif text.startswith(('https://', 'http://')):
+            reply('Ссылки на файлы не поддерживаются. Прикрепите PDF кнопкой со скрепкой или отправьте текст резюме.')
         elif not 40 <= len(text) <= 20000 or text.startswith('/'):
-            reply('Нужен текст от 40 до 20 000 символов. Если отправили файл, скопируйте из него текст.')
+            reply('Нужен текст резюме от 40 до 20 000 символов или PDF-файл до 5 МБ, прикреплённый кнопкой со скрепкой.')
         else:
             job = db.get(Job, state['job_id'])
             if not job or not job.active:

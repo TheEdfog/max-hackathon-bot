@@ -1,33 +1,25 @@
-import pytest
-from hiring.sources import SourceError, allowed_download, import_source
+from hiring.sources import allowed_download
+from sqlalchemy import select
+from hiring.db import ImportTask, Outbox
+from test_employer_bot import send
+from test_product import client, job, register
 
 
-@pytest.mark.parametrize('url', ['https://cloud.mail.ru/public/abc/def',
-    'https://drive.google.com/file/d/abc/view', 'https://drive.google.com/open?id=abc'])
-def test_unapproved_drives_never_make_requests(url):
-    class Reader:
-        def get(self, *args, **kwargs):
-            pytest.fail('Disabled provider must not make a request')
-        json = get
-    with pytest.raises(SourceError, match='только публичные PDF'):
-        import_source(url, Reader())
+def test_only_max_attachment_host_can_be_downloaded():
+    assert allowed_download('fd.oneme.ru', 'max')
+    assert not allowed_download('fd.oneme.ru.attacker.test', 'max')
+    assert not allowed_download('disk.yandex.ru', 'yandex')
+    assert not allowed_download('drive.google.com', 'google')
+    assert not allowed_download('cloud.mail.ru', 'mail')
 
 
-@pytest.mark.parametrize('provider,host', [('mail', 'cloclo57.datacloudmail.ru'),
-    ('mail', 'cloud.mail.ru'), ('google', 'drive.usercontent.google.com'),
-    ('google', 'drive.google.com')])
-def test_disabled_provider_cdn_denied(provider, host):
-    assert not allowed_download(host, provider)
-
-
-@pytest.mark.parametrize('host', ['cloclo57.datacloudmail.ru.evil.test','evil.cloud.mail.ru','127.0.0.1','mail.ru'])
-def test_mail_unrelated_hosts_denied(host):
-    assert not allowed_download(host,'mail')
-
-
-def test_mail_dispatcher_to_arbitrary_url_denied_before_fetch():
-    class Reader:
-        def get(self,*args,**kwargs):
-            return b'{"dispatcher":{"weblink_get":{"url":"https://evil.test/public/path"}}}'
-    with pytest.raises(SourceError,match='только публичные PDF'):
-        import_source('https://cloud.mail.ru/public/abc/def',Reader())
+def test_candidate_must_attach_files_in_max(client):
+    employer = register(client, 'link-owner', 'employer')
+    jid = job(client, employer)
+    send(client, 701, '/start apply_' + jid, 1)
+    send(client, 701, 'Согласен', 2)
+    send(client, 701, 'https://disk.yandex.ru/i/synthetic', 3)
+    with client.app.state.factory() as db:
+        assert db.scalar(select(ImportTask)) is None
+        assert any('Ссылки на файлы не поддерживаются' in row.body.get('text', '')
+                   for row in db.scalars(select(Outbox)))

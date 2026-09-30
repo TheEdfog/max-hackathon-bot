@@ -32,18 +32,6 @@ class JobAssessment(BaseModel):
     questions: list[dict]
 
 
-class SourceBody(BaseModel):
-    model_config = {'extra': 'forbid'}
-    url: str = Field(min_length=10, max_length=2048)
-
-
-class SourcePreview(BaseModel):
-    text: str
-    provider: str
-    warning: str
-    stored: Literal[False]
-
-
 class TestUpdate(TestBody):
     expected_version: int = Field(ge=1)
 
@@ -78,15 +66,6 @@ def install_talent_routes(router, require, db_session, owned_application):
             raise HTTPException(410, 'Отклик отозван, персональные данные удалены')
         return row
 
-
-    @router.post('/sources/preview', response_model=SourcePreview)
-    def preview(body: SourceBody, identity=Depends(require('jobs:write'))):
-        from .sources import import_source, SourceError
-        try:
-            result = import_source(body.url)
-            return {'text': result.text, 'provider': result.provider, 'warning': result.warning, 'stored': False}
-        except SourceError as exc:
-            raise HTTPException(422, str(exc))
 
     @router.post('/documents/parse', response_model=ParsedDocument)
     def parse(file: UploadFile = File(...), identity=Depends(require('jobs:write'))):

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from hiring.db import Application, ApplicationReview, AssessmentTemplate, BotSession, ImportTask, Job, Outbox, ResumeDocument, User, now
 from hiring.imports import deliver_import
 from hiring.matching import evidence, extract
-from hiring.sources import SourceError, SourceResult, allowed_download, import_source, source_kind
+from hiring.sources import SourceError, SourceResult, allowed_download
 from test_product import client, register, job
 from test_integrations import key, PREFIX
 from test_employer_bot import send
@@ -131,34 +131,13 @@ def test_pdf_original_review_and_withdrawal(client):
         assert db.get(ResumeDocument, aid) is None and db.get(ApplicationReview, aid) is None
 
 
-@pytest.mark.parametrize('url', ['http://github.com/user', 'https://127.0.0.1/test.pdf', 'https://github.com.evil.test/user',
-    'https://evil.test@github.com/user', 'https://github.com:444/user', 'https://github.com/user\\evil',
-    'https://drive.google.com.evil.test/file/d/abc/view', 'https://disk.yandex.ru.evil.test/d/abc'])
-def test_unsafe_urls_rejected(url):
-    with pytest.raises(SourceError):
-        source_kind(url)
-
-
-def test_source_contracts_and_mail_fallback():
-    with pytest.raises(SourceError, match='только публичные PDF'):
-        source_kind('https://cloud.mail.ru/public/abc/def')
-    class LoginPage:
-        def get(self, *args, **kwargs):
-            return b'<html>Login required</html>'
-    with pytest.raises(SourceError, match='только публичные PDF'):
-        import_source('https://cloud.mail.ru/public/abc/def', LoginPage())
-    assert allowed_download('downloader.disk.yandex.ru', 'yandex')
-    assert not allowed_download('downloader.disk.yandex.ru.evil.test', 'yandex')
-    assert allowed_download('s41klg.storage.yandex.net', 'yandex')
-    assert not allowed_download('s41klg.storage.yandex.net.evil.test', 'yandex')
-    class Fake:
-        def json(self, url, provider):
-            return {'href': 'https://downloader.disk.yandex.ru/fake'}
-        def get(self, url, provider):
-            return pdf_bytes()
-    for url, provider in [('https://disk.yandex.ru/d/synthetic', 'yandex')]:
-        result = import_source(url, Fake())
-        assert RESUME in result.text and result.pdf.startswith(b'%PDF') and result.provider == provider
+def test_external_file_links_are_not_download_sources(client):
+    paths = client.get('/openapi.json').json()['paths']
+    assert not any('/sources/preview' in path for path in paths)
+    assert allowed_download('fd.oneme.ru', 'max')
+    assert not allowed_download('disk.yandex.ru', 'yandex')
+    assert not allowed_download('drive.google.com', 'google')
+    assert not allowed_download('cloud.mail.ru', 'mail')
 
 
 def test_public_reader_redirect_dns_size_and_no_auth(monkeypatch):
@@ -171,16 +150,16 @@ def test_public_reader_redirect_dns_size_and_no_auth(monkeypatch):
         return httpx.Response(302, headers={'location': 'https://127.0.0.1/private'})
     monkeypatch.setattr('hiring.sources.httpx.Client', lambda **kw: real_client(**kw, transport=httpx.MockTransport(response)))
     with pytest.raises(SourceError, match='неподдерживаемый'):
-        PublicReader().get('https://cloud-api.yandex.net/v1/disk/public/resources/download', 'yandex')
+        PublicReader().get('https://fd.oneme.ru/getfile', 'max')
     assert len(calls) == 1
     monkeypatch.setattr('hiring.sources.socket.getaddrinfo', lambda *a, **k: [(2, 1, 6, '', ('127.0.0.1', 443))])
     with pytest.raises(SourceError, match='недоступен'):
-        PublicReader().get('https://cloud-api.yandex.net/v1/disk/public/resources/download', 'yandex')
+        PublicReader().get('https://fd.oneme.ru/getfile', 'max')
     assert len(calls) == 1
     monkeypatch.setattr('hiring.sources.socket.getaddrinfo', lambda *a, **k: [(2, 1, 6, '', ('93.184.216.34', 443))])
     monkeypatch.setattr('hiring.sources.httpx.Client', lambda **kw: real_client(**kw, transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b'x' * 30))))
     with pytest.raises(SourceError, match='слишком большой'):
-        PublicReader().get('https://cloud-api.yandex.net/v1/disk/public/resources/download', 'yandex', limit=20)
+        PublicReader().get('https://fd.oneme.ru/getfile', 'max', limit=20)
 
 
 def test_no_pdf_fabrication_and_parse_scope(client):
@@ -201,7 +180,12 @@ def candidate_import(client, uid=300):
     jid = job(client, employer)
     send(client, uid, '/start apply_' + jid, 500)
     send(client, uid, 'Согласен', 501)
-    send(client, uid, 'https://disk.yandex.ru/d/synthetic', 502)
+    from hiring.bot import process_event
+    process_event(client.app.state.factory, {'update_type': 'message_created', 'message': {
+        'sender': {'user_id': uid}, 'recipient': {'chat_type': 'dialog'},
+        'body': {'mid': '502', 'attachments': [{'type': 'file', 'filename': 'resume.pdf',
+            'size': len(pdf_bytes()), 'payload': {'url': 'https://fd.oneme.ru/getfile?signature=test'}}]}}},
+        client.app.state.config)
     with client.app.state.factory() as db:
         row = db.scalar(select(ImportTask))
         assert row.status == 'pending'
@@ -210,7 +194,7 @@ def candidate_import(client, uid=300):
 
 def test_max_import_preview_confirmation_and_cleanup(client):
     tid, jid = candidate_import(client)
-    assert deliver_import(client.app.state.factory, lambda url: SourceResult(RESUME, 'yandex', 'Synthetic', pdf_bytes()))
+    assert deliver_import(client.app.state.factory, lambda url, size: SourceResult(RESUME, 'max', 'Synthetic', pdf_bytes()))
     with client.app.state.factory() as db:
         assert db.scalar(select(Application)) is None
         assert db.get(ImportTask, tid).url == ''
@@ -229,17 +213,17 @@ def test_max_import_preview_confirmation_and_cleanup(client):
 
 def test_import_cancel_during_download_and_expiry(client):
     tid, _ = candidate_import(client)
-    def slow_source(url):
+    def slow_source(url, size):
         # If fetch held the write transaction, this independent bot event would deadlock.
         send(client, 300, '/cancel', 506)
-        return SourceResult(RESUME, 'yandex', 'Synthetic')
+        return SourceResult(RESUME, 'max', 'Synthetic')
     deliver_import(client.app.state.factory, slow_source)
     with client.app.state.factory() as db:
         assert db.get(ImportTask, tid).status == 'cancelled'
         assert not db.get(ImportTask, tid).text
         db.get(ImportTask, tid).expires_at = now() - timedelta(seconds=1)
         db.commit()
-    deliver_import(client.app.state.factory, lambda _: pytest.fail('Expired task must not fetch'))
+    deliver_import(client.app.state.factory, lambda url, size: pytest.fail('Expired task must not fetch'))
     with client.app.state.factory() as db:
         assert db.get(ImportTask, tid) is None
 
@@ -250,7 +234,7 @@ def test_import_lease_recovery_and_expired_preview_not_sent(client):
         task = db.get(ImportTask, tid)
         task.status, task.lease_until = 'working', now() - timedelta(seconds=1)
         db.commit()
-    assert deliver_import(client.app.state.factory, lambda _: SourceResult(RESUME, 'yandex', 'Synthetic'))
+    assert deliver_import(client.app.state.factory, lambda url, size: SourceResult(RESUME, 'max', 'Synthetic'))
     with client.app.state.factory() as db:
         task = db.get(ImportTask, tid)
         assert task.status == 'ready'
