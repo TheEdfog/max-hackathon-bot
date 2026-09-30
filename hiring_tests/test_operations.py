@@ -61,6 +61,33 @@ def test_provisioned_accounts_have_no_max_and_credentials_are_private(tmp_path):
         provision(url, file)
 
 
+def test_public_review_credentials_are_limited_to_synthetic_accounts(tmp_path):
+    from hiring.verify_accounts import PUBLIC_REVIEW_PASSWORDS
+    url, file = 'sqlite:///' + str(tmp_path / 'review.db'), tmp_path / 'review-accounts.json'
+    provision(url, file, public_review=True)
+    accounts = json.loads(file.read_text())
+    assert {role: row['password'] for role, row in accounts.items()} == PUBLIC_REVIEW_PASSWORDS
+    engine, factory = connect(url)
+    with factory() as db:
+        users = list(db.scalars(select(User)))
+        assert len(users) == 3 and all(not user.max_id for user in users)
+        assert all(user.email.endswith('@example.com') for user in users)
+    engine.dispose()
+
+
+def test_reviewer_api_uses_a_separate_database_and_proxy_path():
+    root = Path(__file__).resolve().parents[1]
+    compose = yaml.safe_load((root / 'compose.ip.yml').read_text(encoding='utf-8'))
+    service = compose['services']['review-api']
+    assert service['env_file'] == '.env.review'
+    assert 'review-data:/app/data' in service['volumes']
+    assert 'ports' not in service
+    caddy = (root / 'deploy/Caddyfile.ip').read_text(encoding='utf-8')
+    assert 'handle_path /review/*' in caddy and 'review-api:8000' in caddy
+    manifest = yaml.safe_load((root / 'DATA-API.yaml').read_text(encoding='utf-8'))
+    assert manifest['api']['baseUrl'].endswith('/review')
+
+
 def test_two_senders_do_not_send_same_row(client):
     with client.app.state.factory() as db:
         db.add(Outbox(max_id='1', body={'text': 'Synthetic concurrent delivery'}))

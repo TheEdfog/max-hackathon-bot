@@ -1,5 +1,38 @@
 # Add after compose.production.yml only when using a public IP certificate.
 services:
+  review-api:
+    image: rezumit-hiring-api:latest
+    env_file: .env.review
+    environment:
+      HIRING_DATABASE_URL: sqlite:////app/data/hiring.db
+      HIRING_REVIEW_MODE: "true"
+      HIRING_ENV: production
+      HIRING_DEMO: "false"
+      HIRING_AI_ENABLED: "false"
+      MAX_BOT_TOKEN: ""
+      MAX_BOT_NAME: ""
+      MAX_WEBHOOK_SECRET: ""
+    volumes:
+      - review-data:/app/data
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 25s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
   proxy:
     volumes:
       - ./deploy/Caddyfile.ip:/etc/caddy/Caddyfile:ro
+    depends_on:
+      review-api:
+        condition: service_healthy
+volumes:
+  review-data:

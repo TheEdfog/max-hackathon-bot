@@ -37,6 +37,7 @@ docs/assets_test.png
 docs/test_reports/
 .env.*
 !.env.hiring.example
+!.env.review.example
 *.pem
 *.key
 ssh-key-*.zip

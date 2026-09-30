@@ -9,6 +9,7 @@ class Config:
     database_url: str = field(default_factory=lambda: os.getenv("HIRING_DATABASE_URL", "sqlite:///data/hiring.db"))
     secret: str = field(default_factory=lambda: os.getenv("HIRING_SECRET", ""), repr=False)
     production: bool = field(default_factory=lambda: os.getenv("HIRING_ENV", "development") == "production")
+    review_mode: bool = field(default_factory=lambda: os.getenv("HIRING_REVIEW_MODE", "false").lower() == "true")
     demo: bool = field(default_factory=lambda: os.getenv("HIRING_DEMO", "true").lower() == "true")
     employer_code: str = field(default_factory=lambda: os.getenv("HIRING_EMPLOYER_CODE", ""), repr=False)
     bot_token: str = field(default_factory=lambda: os.getenv("MAX_BOT_TOKEN", ""), repr=False)
@@ -24,6 +25,9 @@ class Config:
     sandbox_users: tuple[str, ...] = ()
 
     def validate(self):
+        if self.review_mode and (not self.production or self.demo or self.bot_token or self.ai_enabled
+                                 or not self.database_url.startswith('sqlite:')):
+            raise ValueError('Reviewer API requires production safeguards, isolated SQLite, and no bot or AI credentials')
         if self.sandbox:
             from sqlalchemy.engine import make_url
             database = make_url(self.database_url)

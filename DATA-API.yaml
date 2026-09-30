@@ -1,6 +1,6 @@
 # DATA-API 1.0, based on stasnorman/example-data-api (see docs/DATA-API.md).
-# Public HTTPS verified on 2026-09-28. Full checks need private synthetic accounts.
-# No credentials here. The evaluator supplies a Bearer JWT for each named role.
+# Public review endpoint uses its own API container and SQLite volume, isolated from production records.
+# No credentials here. The organizer receives a synthetic-account file separately.
 # Integration checks issue a short-lived scoped key in memory and revoke it in cleanup.
 # Use dedicated synthetic employer/candidate/other_employer accounts without MAX links.
 schemaVersion: "1.0"
@@ -8,7 +8,7 @@ solution:
   name: "РезюмИТ Найм — помощник первичного отбора в MAX"
   # teamId is optional; add only the confirmed organizer-issued team identifier.
 api:
-  baseUrl: "https://176.108.244.193"
+  baseUrl: "https://176.108.244.193/review"
   openapi: "./openapi.json"
   defaultHeaders:
     Accept: "application/json"

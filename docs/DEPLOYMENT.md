@@ -26,7 +26,15 @@ Caddy получает доверенный сертификат для PUBLIC_H
 
 ### Если есть только публичный IPv4
 
-Задайте `PUBLIC_HOST=публичный_IP` и `PUBLIC_URL=https://публичный_IP`, добавьте `-f compose.ip.yml` после production-файла. Этот вариант явно выбирает Let's Encrypt и профиль `shortlived`, а не внутренний самоподписной сертификат Caddy. Для IP-клиентов без SNI указан `default_sni`: иначе Caddy внутри Docker может искать сертификат для внутреннего адреса контейнера. Нужны открытые снаружи TCP 80/443; сертификаты автоматически обновляются, volume Caddy должен сохраняться. [IP-сертификаты Let's Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability), [настройка профиля Caddy](https://caddyserver.com/docs/caddyfile/directives/tls#issuers), [default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni). Проверка синтаксиса не подтверждает выдачу сертификата или приём webhook MAX.
+Задайте `PUBLIC_HOST=публичный_IP` и `PUBLIC_URL=https://публичный_IP`, создайте закрытый `.env.review` по `.env.review.example` с отдельными случайными `HIRING_SECRET` и `HIRING_EMPLOYER_CODE`, затем добавьте `-f compose.ip.yml` после production-файла. Этот вариант явно выбирает Let's Encrypt и профиль `shortlived`, а не внутренний самоподписной сертификат Caddy. Для IP-клиентов без SNI указан `default_sni`: иначе Caddy внутри Docker может искать сертификат для внутреннего адреса контейнера. Нужны открытые снаружи TCP 80/443; сертификаты автоматически обновляются, volume Caddy должен сохраняться. Ветка `/review/*` ведёт в изолированный API-контейнер и отдельный Docker volume, не подключённый к production DB.
+
+Создайте демонстрационные роли только в изолированном `review-api`:
+
+```sh
+docker compose --env-file .env.hiring -f docker-compose.yml -f compose.production.yml -f compose.ip.yml exec review-api python -m hiring.verify_accounts --isolated-test-db --public-review-accounts --output /app/data/reviewer-accounts.json
+```
+
+Флаг изоляции обязателен; не запускайте команду на production API. Пароли demo опубликованы в README и предназначены только для reviewer-базы.
 
 Остановить локальный polling. Команда ниже сначала только показывает план, затем регистрирует webhook после проверки здоровья. Она не удаляет чужие подписки:
 

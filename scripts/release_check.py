@@ -19,10 +19,11 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ('README.md', 'Dockerfile', 'docker-compose.yml',
-            'compose.production.yml', 'deploy/Caddyfile', 'requirements-hiring.lock',
+            'compose.production.yml', 'compose.ip.yml', '.env.review.example',
+            'deploy/Caddyfile', 'deploy/Caddyfile.ip', 'requirements-hiring.lock',
             'requirements-hiring-test.lock', 'DATA-API.yaml', 'openapi.json',
             'docs/DEPLOYMENT.md', 'docs/HR-INTEGRATION.md', 'docs/DATA-POLICY.md')
-ENV_TEMPLATES = {'.env.hiring.example'}
+ENV_TEMPLATES = {'.env.hiring.example', '.env.review.example'}
 
 
 def safe_release_name(name):
@@ -46,7 +47,7 @@ def deployment_url_set(value):
         url = urlsplit(value)
         host = (url.hostname or '').rstrip('.').lower()
         if (url.scheme != 'https' or not host or url.username or url.password or url.port not in (None, 443)
-                or url.query or url.fragment or url.path not in ('', '/') or '.' not in host
+                or url.query or url.fragment or url.path not in ('', '/', '/review') or '.' not in host
                 or host.endswith(('.invalid', '.localhost', '.local', '.test', '.example'))
                 or any(host == d or host.endswith('.' + d) for d in ('example.com', 'example.org', 'example.net'))):
             return False

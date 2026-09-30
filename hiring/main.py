@@ -133,6 +133,8 @@ def create_app(config=None):
 
     @app.post("/api/auth/register", status_code=201)
     def register(body: Registration, db=Depends(db_session)):
+        if config.review_mode:
+            raise HTTPException(403, 'Регистрация закрыта на общей песочнице; используйте опубликованные тестовые роли')
         if body.role == "employer" and config.employer_code and not hmac.compare_digest(body.code.encode(), config.employer_code.encode()):
             raise HTTPException(403, "Нужен код доступа работодателя")
         if body.role == "employer" and not body.company.strip():
